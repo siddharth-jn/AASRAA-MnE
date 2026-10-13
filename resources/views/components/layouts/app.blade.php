@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>{{ $title ?? 'AASRA IMPACT' }}</title>@vite(['resources/css/app.css','resources/js/app.js'])</head>
+<body x-data="{ navOpen: false }"><div class="min-h-screen lg:flex">
+<div x-cloak x-show="navOpen" @click="navOpen=false" class="fixed inset-0 z-30 bg-slate-950/30 lg:hidden"></div>
+<aside :class="navOpen ? 'translate-x-0' : '-translate-x-full'" class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-200 bg-white transition lg:translate-x-0">
+<div class="border-b border-slate-200 px-6 py-5"><div class="flex items-center gap-3"><div class="grid h-10 w-10 place-items-center rounded-xl bg-brand-600 font-black text-white">AI</div><div><p class="font-bold tracking-tight text-ink">AASRA IMPACT</p><p class="text-[11px] text-slate-500">Monitoring & Impact</p></div></div></div>
+<nav class="flex-1 space-y-1 overflow-y-auto p-3 text-sm">
+@foreach ([['dashboard','Dashboard','⌂'],['projects.index','Projects','▦'],['centres.index','Centres','⌖'],['entries.index','Data Entry','✎'],['approvals.index','Approvals','✓'],['reports.index','Reports','▤']] as [$routeName,$label,$icon])
+<a href="{{ route($routeName) }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs(str_replace('.index','.*',$routeName)) || request()->routeIs($routeName) ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">{{ $icon }}</span>{{ $label }}</a>
+@endforeach
+@can('configure')<a href="{{ url('/admin') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium text-slate-600 hover:bg-slate-50"><span class="w-5 text-center">⚙</span>Administration</a>@endcan
+</nav>
+<div class="border-t border-slate-200 p-4"><p class="truncate text-sm font-semibold text-slate-800">{{ auth()->user()->name }}</p><p class="truncate text-xs text-slate-500">{{ auth()->user()->role }}</p><form method="POST" action="{{ route('logout') }}" class="mt-3">@csrf<button class="text-sm font-medium text-slate-500 hover:text-slate-900">Sign out</button></form></div>
+</aside>
+<div class="min-w-0 flex-1 lg:pl-64"><header class="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur md:px-8"><div class="flex items-center gap-3"><button @click="navOpen=true" class="rounded-lg p-2 hover:bg-slate-100 lg:hidden">☰</button><div><h1 class="text-lg font-bold text-ink">{{ $heading ?? 'Dashboard' }}</h1><p class="hidden text-xs text-slate-500 sm:block">FY 2026–27 · {{ now()->format('d M Y') }}</p></div></div><div class="flex items-center gap-3">@if($demoMode ?? false)<span class="badge bg-amber-100 text-amber-800">DEMO MODE</span>@endif<span class="grid h-9 w-9 place-items-center rounded-full bg-brand-100 text-sm font-bold text-brand-700">{{ collect(explode(' ',auth()->user()->name))->map(fn($word)=>$word[0])->take(2)->join('') }}</span></div></header>
+<main class="p-4 md:p-8">@if(session('success'))<div class="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{{ session('success') }}</div>@endif @if($errors->any())<div class="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800"><ul class="list-disc pl-5">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif {{ $slot }}</main></div>
+</div></body></html>

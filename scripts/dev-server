@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+export PATH="$ROOT_DIR/.runtime/bin:$PATH"
+export PHP_INI_SCAN_DIR="$ROOT_DIR/.runtime/bin"
+cd "$ROOT_DIR"
+exec php artisan serve --host=127.0.0.1 --port="${PORT:-8000}"
