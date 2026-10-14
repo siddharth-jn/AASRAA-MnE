@@ -2,6 +2,9 @@
 
 return [
     'demo_password' => env('DEMO_PASSWORD'),
+    'email_notifications' => env('EMAIL_NOTIFICATIONS', false),
+    'reporting_deadline_day' => env('REPORTING_DEADLINE_DAY', 5),
+    'deadline_reminder_days' => env('DEADLINE_REMINDER_DAYS', 3),
     'financial_year_start_month' => 4,
     'roles' => ['ADMIN', 'SENIOR PROGRAM LEAD', 'PROGRAM LEAD', 'CENTRE COORDINATOR', 'VIEWER'],
     'location_types' => ['Education Centre', 'Partner School', 'Mobile Learning Unit', 'Shelter Home', 'Training Centre', 'Community Location', 'Programme Reporting Region'],

@@ -10,4 +10,9 @@ class EvidenceFile extends ImpactModel
     {
         return $this->belongsTo(EntryRevision::class, 'entry_revision_id');
     }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
 }

@@ -30,7 +30,7 @@ class EntryController extends Controller
         abort_unless($scope->assignments($request->user())->whereKey($assignment)->exists() && Gate::allows('submit'), 403);
         $period = $request->input('period', '2026-09').'-01';
         $assignment->load(['indicator.project', 'centre']);
-        $entry = IndicatorEntry::with('currentRevision.evidence')->where('indicator_assignment_id', $assignment->id)->whereDate('period', $period)->first();
+        $entry = IndicatorEntry::with(['currentRevision.evidence', 'revisions.user', 'revisions.evidence', 'revisions.actions.user'])->where('indicator_assignment_id', $assignment->id)->whereDate('period', $period)->first();
         $target = $targets->findForPeriod($assignment->id, CarbonImmutable::parse($period));
 
         return view('entries.edit', compact('assignment', 'entry', 'period', 'target'));
@@ -91,14 +91,19 @@ class EntryController extends Controller
     {
         Gate::authorize('review');
 
-        return view('approvals.index', ['entries' => $scope->entries($request->user())->where('status', 'SUBMITTED')->with(['assignment.indicator.project', 'assignment.centre', 'currentRevision.user', 'currentRevision.evidence'])->paginate(20)]);
+        return view('approvals.index', ['entries' => $scope->entries($request->user())->where('status', 'SUBMITTED')->with(['assignment.indicator.project', 'assignment.centre', 'assignment.targets', 'currentRevision.user', 'currentRevision.evidence.user', 'revisions.user', 'revisions.actions.user'])->paginate(20)]);
     }
 
     public function review(Request $request, IndicatorEntry $entry, EntryService $service): RedirectResponse
     {
         Gate::authorize('review');
         Gate::authorize('view-entry', $entry);
-        $data = $request->validate(['action' => ['required', Rule::in(['APPROVED', 'RETURNED', 'REJECTED'])], 'comment' => ['nullable', 'string', 'max:2000']]);
+        $entry->loadMissing('assignment.indicator');
+        $rules = ['action' => ['required', Rule::in(['APPROVED', 'RETURNED', 'REJECTED'])], 'comment' => ['nullable', 'string', 'max:2000']];
+        if ($request->input('action') === 'APPROVED' && $entry->assignment->indicator->evidence_review_required) {
+            $rules['evidence_reviewed'] = ['accepted'];
+        }
+        $data = $request->validate($rules);
         $service->review($request->user(), $entry, $data['action'], $data['comment'] ?? null);
 
         return back()->with('success', 'Review decision recorded.');
@@ -109,5 +114,16 @@ class EntryController extends Controller
         Gate::authorize('view-evidence', $evidence);
 
         return Storage::disk('local')->download($evidence->path, $evidence->original_name, ['Content-Type' => $evidence->mime_type]);
+    }
+
+    public function previewEvidence(EvidenceFile $evidence): StreamedResponse
+    {
+        Gate::authorize('view-evidence', $evidence);
+        abort_unless(str_starts_with($evidence->mime_type, 'image/') || $evidence->mime_type === 'application/pdf', 415, 'Preview is not available for this file type.');
+
+        return Storage::disk('local')->response($evidence->path, $evidence->original_name, [
+            'Content-Type' => $evidence->mime_type,
+            'Content-Disposition' => 'inline; filename="'.addslashes($evidence->original_name).'"',
+        ]);
     }
 }

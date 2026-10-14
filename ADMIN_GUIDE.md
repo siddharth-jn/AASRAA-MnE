@@ -18,3 +18,11 @@ Open **Indicator Targets** to add or revise targets. Select an indicator-centre 
 Set `active` off to archive a project, centre, indicator, or target. The admin interface intentionally omits destructive record actions for historically referenced configuration. Definition changes generate version snapshots so previously submitted records keep their original rules.
 
 Create staff in **Users**, assign one role, then select the projects and centres they may access. Password fields are required when creating a user and ignored when left blank during editing.
+
+## Workflow and reporting operations
+
+Use **Approvals** for submitted revisions. A record configured for evidence review cannot be approved until the reviewer confirms that proof was examined. Returned and rejected decisions require comments. Corrections create another revision while the last approved revision remains in official reports until the correction is approved.
+
+Use **Imports** for historical CSV/XLSX data. Download a project template when possible, or map differently named columns after upload. Resolve invalid rows in the source spreadsheet and upload a corrected file. Duplicate reporting keys are never overwritten, imported records remain drafts, and evidence-required rows are marked for manual follow-up.
+
+Configure `REPORTING_DEADLINE_DAY` and `DEADLINE_REMINDER_DAYS` in `.env`, then run Laravel's scheduler to enable in-app deadline reminders. Set `EMAIL_NOTIFICATIONS=true` only after SMTP is configured and tested. Password reset messages use the Laravel mail configuration regardless of workflow email preference.

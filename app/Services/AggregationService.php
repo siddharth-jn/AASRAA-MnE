@@ -15,10 +15,12 @@ class AggregationService
             return null;
         }
 
+        $numericValues = array_values(array_filter(array_column($records, 'value'), fn ($value): bool => is_numeric($value)));
+
         return match ($method) {
-            'SUM' => array_sum(array_column($records, 'value')),
+            'SUM' => $numericValues === [] ? null : array_sum($numericValues),
             'LATEST SNAPSHOT' => end($records)['value'] ?? null,
-            'AVERAGE' => array_sum(array_column($records, 'value')) / count($records),
+            'AVERAGE' => $numericValues === [] ? null : array_sum($numericValues) / count($numericValues),
             'WEIGHTED AVERAGE' => $this->weightedAverage($records),
             'RATIO' => $this->ratio($records),
             'STATUS' => array_count_values(array_values(array_filter(array_column($records, 'status')))),

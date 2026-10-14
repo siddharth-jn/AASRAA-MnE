@@ -6,7 +6,10 @@ use App\Models\ApprovalAction;
 use App\Models\IndicatorAssignment;
 use App\Models\IndicatorEntry;
 use App\Models\User;
+use App\Notifications\WorkflowNotification;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -15,8 +18,21 @@ class EntryService
     /** @param array<string, mixed> $data @param array<int, UploadedFile> $files */
     public function save(User $user, IndicatorAssignment $assignment, string $period, array $data, array $files, bool $submit): IndicatorEntry
     {
-        return DB::transaction(function () use ($user, $assignment, $period, $data, $files, $submit): IndicatorEntry {
-            $entry = IndicatorEntry::query()->lockForUpdate()->firstOrCreate(['indicator_assignment_id' => $assignment->id, 'period' => $period], ['status' => 'DRAFT', 'is_demo' => false]);
+        $entry = DB::transaction(function () use ($user, $assignment, $period, $data, $files, $submit): IndicatorEntry {
+            $normalizedPeriod = CarbonImmutable::parse($period)->startOfMonth()->toDateString();
+            $entry = IndicatorEntry::query()
+                ->where('indicator_assignment_id', $assignment->id)
+                ->whereDate('period', $normalizedPeriod)
+                ->lockForUpdate()
+                ->first();
+            if (! $entry) {
+                $entry = IndicatorEntry::create([
+                    'indicator_assignment_id' => $assignment->id,
+                    'period' => $normalizedPeriod,
+                    'status' => 'DRAFT',
+                    'is_demo' => false,
+                ]);
+            }
             if ($entry->status === 'SUBMITTED') {
                 throw ValidationException::withMessages(['entry' => 'This record is awaiting review.']);
             }
@@ -48,11 +64,22 @@ class EntryService
 
             return $entry->fresh(['assignment.indicator', 'currentRevision.evidence']);
         });
+
+        if ($submit && $entry->status === 'SUBMITTED') {
+            $this->reviewersFor($entry)->each(fn (User $reviewer) => $reviewer->notify(new WorkflowNotification(
+                'Submission requires approval',
+                "{$entry->assignment->indicator->name} was submitted for {$entry->assignment->centre->name}.",
+                route('approvals.index'),
+                'approval_required',
+            )));
+        }
+
+        return $entry;
     }
 
     public function review(User $reviewer, IndicatorEntry $entry, string $action, ?string $comment): IndicatorEntry
     {
-        return DB::transaction(function () use ($reviewer, $entry, $action, $comment): IndicatorEntry {
+        $entry = DB::transaction(function () use ($reviewer, $entry, $action, $comment): IndicatorEntry {
             $entry = IndicatorEntry::query()->lockForUpdate()->findOrFail($entry->id);
             $revision = $entry->currentRevision;
             if ($entry->status !== 'SUBMITTED' || ! $revision) {
@@ -73,5 +100,33 @@ class EntryService
 
             return $entry->fresh();
         });
+
+        $entry->loadMissing(['assignment.indicator', 'assignment.centre', 'currentRevision.user']);
+        $submitter = $entry->currentRevision->user;
+        $submitter->notify(new WorkflowNotification(
+            "Submission {$entry->status}",
+            trim("{$entry->assignment->indicator->name} for {$entry->assignment->centre->name} is now {$entry->status}. ".($comment ?: '')),
+            route('entries.edit', ['assignment' => $entry->indicator_assignment_id, 'period' => $entry->period->format('Y-m')]),
+            strtolower(str_replace(' ', '_', $entry->status)),
+        ));
+
+        return $entry;
+    }
+
+    /** @return Collection<int, User> */
+    private function reviewersFor(IndicatorEntry $entry): Collection
+    {
+        $entry->loadMissing('assignment.indicator');
+        $projectId = $entry->assignment->indicator->project_id;
+
+        return User::query()
+            ->where('active', true)
+            ->whereIn('role', ['ADMIN', 'SENIOR PROGRAM LEAD'])
+            ->whereKeyNot($entry->currentRevision->user_id)
+            ->where(function ($query) use ($projectId): void {
+                $query->where('role', 'ADMIN')
+                    ->orWhereHas('projects', fn ($projectQuery) => $projectQuery->whereKey($projectId));
+            })
+            ->get();
     }
 }

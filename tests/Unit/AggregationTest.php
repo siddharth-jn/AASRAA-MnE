@@ -38,5 +38,7 @@ class AggregationTest extends TestCase
     public function test_missing_records_do_not_become_zero(): void
     {
         $this->assertNull((new AggregationService)->aggregate([], 'SUM'));
+        $this->assertNull((new AggregationService)->aggregate([['value' => null]], 'SUM'));
+        $this->assertEquals(12, (new AggregationService)->aggregate([['value' => null], ['value' => 12]], 'AVERAGE'));
     }
 }

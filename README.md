@@ -1,6 +1,6 @@
 # AASRA IMPACT
 
-AASRA IMPACT is a Laravel based project monitoring and impact management portal for Aasraa Trust. The current release includes the operational foundation and Phase 2 indicator system: secure staff login, role and scope controls, programme and centre management, guided KPI configuration, target management, generated data-entry controls, private evidence, approval decisions, dashboards, CSV reports, and deterministic demonstration data.
+AASRA IMPACT is a Laravel based project monitoring and impact management portal for Aasraa Trust. The current release completes Phases 1–5: secure staff access, configurable indicators and targets, evidence-backed submissions and approvals, dashboards and data quality monitoring, approved-only reporting, CSV/XLSX migration, exports, and deterministic demonstration data.
 
 ## Requirements
 
@@ -30,7 +30,15 @@ npm run build
 php artisan serve
 ```
 
+Run Laravel's scheduler every minute in production so reporting deadline reminders are delivered:
+
+```cron
+* * * * * cd /path/to/application && php artisan schedule:run >> /dev/null 2>&1
+```
+
 Open `http://127.0.0.1:8000/login`. Demo users are listed in [DEMO_DATA.md](DEMO_DATA.md); their password is the private `DEMO_PASSWORD` value in `.env`. The Filament administration panel is at `/admin` and accepts administrators only.
+
+Set `EMAIL_NOTIFICATIONS=true` after configuring Laravel mail settings to send workflow emails in addition to in-app notifications. Password reset mail uses the configured Laravel mailer. Core reporting and approval workflows continue to work with email disabled.
 
 Run tests and formatting with:
 
