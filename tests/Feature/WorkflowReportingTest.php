@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Centre;
 use App\Models\IndicatorAssignment;
 use App\Models\IndicatorDefinition;
+use App\Models\IndicatorTarget;
 use App\Models\Programme;
 use App\Models\Project;
 use App\Models\User;
@@ -102,6 +103,57 @@ class WorkflowReportingTest extends TestCase
         $this->actingAs($reviewer)->get(route('notifications.index'))->assertOk();
     }
 
+    public function test_organization_dashboard_shows_current_navigation_and_recent_activity_without_period_reporting(): void
+    {
+        [$assignment, , $reviewer] = $this->configuredAssignment();
+
+        $this->actingAs($reviewer)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('Active projects')
+            ->assertSee('Active centres')
+            ->assertSee('Pending approvals')
+            ->assertSee(route('projects.index'), false)
+            ->assertSee(route('centres.index'), false)
+            ->assertSee(route('approvals.index'), false)
+            ->assertSee('Recent submissions')
+            ->assertSee('Recently approved')
+            ->assertDontSee('name="period_type"', false)
+            ->assertDontSee('Project reporting completion')
+            ->assertDontSee('Approval status')
+            ->assertDontSee('Key approved outcomes');
+    }
+
+    public function test_project_overview_has_no_period_form_and_activity_rows_show_target_and_actual(): void
+    {
+        [$assignment, $submitter, $reviewer] = $this->configuredAssignment();
+        IndicatorTarget::create([
+            'indicator_assignment_id' => $assignment->id,
+            'period' => '2026-09-01',
+            'period_end' => '2026-09-30',
+            'period_type' => 'monthly',
+            'target_type' => 'numeric',
+            'value' => 20,
+            'active' => true,
+        ]);
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18], [], true);
+        app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
+
+        $this->actingAs($reviewer)
+            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'overview']))
+            ->assertOk()
+            ->assertDontSee('name="period_type"', false)
+            ->assertSee('latest month with project data');
+
+        $this->actingAs($reviewer)
+            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'activities', 'period_type' => 'monthly', 'anchor' => '2026-09']))
+            ->assertOk()
+            ->assertSee('Activities')
+            ->assertDontSee('Activitys')
+            ->assertSee('Actual: 18.00 sessions')
+            ->assertSee('Target: 20 sessions');
+    }
+
     public function test_reports_use_project_and_centre_filters_with_project_specific_centre_options(): void
     {
         [$assignment, , $reviewer] = $this->configuredAssignment();
@@ -177,11 +229,12 @@ class WorkflowReportingTest extends TestCase
         ]);
 
         $this->actingAs($reviewer)
-            ->get(route('entries.index', ['project' => $assignment->indicator->project_id]))
+            ->get(route('entries.index', ['project' => $assignment->indicator->project_id, 'lock_project' => 1]))
             ->assertOk()
             ->assertSee($assignment->centre->name)
             ->assertDontSee($otherCentre->name)
-            ->assertDontSee($otherIndicator->name);
+            ->assertDontSee($otherIndicator->name)
+            ->assertDontSee('<select id="project"', false);
 
         $restrictedCentre = Centre::create([
             'code' => 'C3',

@@ -39,6 +39,7 @@
         <form method="POST" enctype="multipart/form-data" action="{{ route('entries.store', $assignment) }}" class="card p-6">
             @csrf
             <input type="hidden" name="period" value="{{ $period }}">
+            @if(request()->boolean('lock_project'))<input type="hidden" name="lock_project" value="1">@endif
 
             <div class="mb-6">
                 <label for="value_state">Reporting state</label>
@@ -149,7 +150,7 @@
             @endif
 
             <div class="mt-7 flex flex-wrap justify-end gap-3">
-                <a href="{{ route('entries.index', ['period' => substr($period, 0, 7)]) }}" class="btn-secondary">Cancel</a>
+                <a href="{{ route('entries.index', ['period' => substr($period, 0, 7), 'project' => $definition->project_id, 'centre' => $assignment->centre_id, 'lock_project' => request()->boolean('lock_project') ? 1 : null]) }}" class="btn-secondary">Cancel</a>
                 <button name="action" value="draft" class="btn-secondary">Save draft</button>
                 <button name="action" value="submit" class="btn-primary">{{ $definition->approval_required ? 'Submit for approval' : 'Submit result' }}</button>
             </div>

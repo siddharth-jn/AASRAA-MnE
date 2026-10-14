@@ -9,6 +9,7 @@ use App\Services\CompletenessService;
 use App\Services\ReportingPeriodService;
 use App\Services\ReportingService;
 use App\Services\ScopeService;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -16,41 +17,16 @@ use Illuminate\View\View;
 
 class PortalController extends Controller
 {
-    public function dashboard(Request $request, ScopeService $scope, CompletenessService $completeness, ReportingService $reports, ReportingPeriodService $periods): View
+    public function dashboard(Request $request, ScopeService $scope): View
     {
-        $period = $periods->fromRequest($request);
-        $summary = $completeness->summary($request->user(), $period['data_start'], $period['data_end']);
-        $entryQuery = $scope->entries($request->user())->whereBetween('period', [$period['data_start'], $period['data_end']]);
-        $entries = (clone $entryQuery)->get();
-        $reportingCentres = (clone $entryQuery)
-            ->join('indicator_assignments', 'indicator_entries.indicator_assignment_id', '=', 'indicator_assignments.id')
-            ->distinct()
-            ->count('indicator_assignments.centre_id');
-        $reportRows = $reports->report($request->user(), $period['data_start'], $period['data_end']);
-        $projects = $scope->projects($request->user())->where('active', true)->orderBy('name')->get();
-
-        $projectPerformance = $projects->map(function (Project $project) use ($request, $completeness, $period): array {
-            $projectSummary = $completeness->summary($request->user(), $period['data_start'], $period['data_end'], $project->id);
-
-            return ['project' => $project, 'summary' => $projectSummary];
-        });
-
         return view('dashboard', [
-            'period' => $period,
             'stats' => [
-                'projects' => $projects->count(),
+                'projects' => $scope->projects($request->user())->where('active', true)->count(),
                 'centres' => $scope->centres($request->user())->where('active', true)->count(),
-                'reporting_centres' => $reportingCentres,
-                'completion' => $summary['rate'],
-                'pending' => $summary['pending'],
-                'approved' => $summary['approved'],
+                'pending' => $scope->entries($request->user())->where('status', 'SUBMITTED')->count(),
             ],
-            'completeness' => $summary,
-            'statuses' => $entries->countBy('status'),
             'recentEntries' => $scope->entries($request->user())->with(['assignment.indicator.project', 'assignment.centre', 'currentRevision'])->latest('updated_at')->limit(8)->get(),
             'recentApproved' => $scope->entries($request->user())->where('status', 'APPROVED')->with(['assignment.indicator.project', 'assignment.centre', 'approvedRevision'])->latest('updated_at')->limit(5)->get(),
-            'keyOutcomes' => $reportRows->filter(fn (array $row): bool => in_array($row['indicator']->category, ['Outcome', 'KPI'], true))->take(6),
-            'projectPerformance' => $projectPerformance,
         ]);
     }
 
@@ -62,13 +38,6 @@ class PortalController extends Controller
     public function project(Request $request, Project $project, ScopeService $scope, CompletenessService $completeness, ReportingService $reports, ReportingPeriodService $periods): View
     {
         abort_unless($scope->projects($request->user())->whereKey($project)->exists(), 403);
-        $period = $periods->fromRequest($request);
-        $centreId = $request->integer('centre') ?: null;
-        if ($centreId) {
-            abort_unless($scope->centres($request->user())->whereKey($centreId)->whereHas('projects', fn (Builder $query) => $query->whereKey($project->id))->exists(), 403);
-        }
-
-        $project->load(['programme', 'lead', 'centres' => fn ($query) => $query->whereIn('centres.id', $scope->centres($request->user())->select('centres.id'))]);
         $sectionCategories = [
             'inputs' => 'Input',
             'activities' => 'Activity',
@@ -78,6 +47,16 @@ class PortalController extends Controller
         ];
         $section = $request->string('section', 'overview')->value();
         abort_unless($section === 'overview' || $section === 'evidence' || array_key_exists($section, $sectionCategories), 404);
+
+        $period = $section === 'overview'
+            ? $this->latestProjectPeriod($request, $project, $scope)
+            : $periods->fromRequest($request);
+        $centreId = $request->integer('centre') ?: null;
+        if ($centreId) {
+            abort_unless($scope->centres($request->user())->whereKey($centreId)->whereHas('projects', fn (Builder $query) => $query->whereKey($project->id))->exists(), 403);
+        }
+
+        $project->load(['programme', 'lead', 'centres' => fn ($query) => $query->whereIn('centres.id', $scope->centres($request->user())->select('centres.id'))]);
         if ($section === 'evidence') {
             Gate::authorize('submit');
         }
@@ -128,6 +107,24 @@ class PortalController extends Controller
             'evidence' => $evidence,
             'completeness' => $completeness->summary($request->user(), $period['data_start'], $period['data_end'], $project->id, $centreId),
         ]);
+    }
+
+    /** @return array{type: string, start: CarbonImmutable, end: CarbonImmutable, data_start: CarbonImmutable, data_end: CarbonImmutable, warning: null} */
+    private function latestProjectPeriod(Request $request, Project $project, ScopeService $scope): array
+    {
+        $latestEntryPeriod = $scope->entries($request->user())
+            ->whereHas('assignment.indicator', fn (Builder $query): Builder => $query->where('project_id', $project->id))
+            ->max('period');
+        $month = CarbonImmutable::parse($latestEntryPeriod ?: now())->startOfMonth();
+
+        return [
+            'type' => 'monthly',
+            'start' => $month,
+            'end' => $month->endOfMonth(),
+            'data_start' => $month,
+            'data_end' => $month->endOfMonth(),
+            'warning' => null,
+        ];
     }
 
     public function centres(Request $request, ScopeService $scope): View

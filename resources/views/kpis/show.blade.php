@@ -11,7 +11,7 @@
     <form class="no-print card mb-6 flex flex-wrap items-end gap-3 p-5">
         <div><label for="start">From</label><input id="start" type="month" name="start" value="{{ $start->format('Y-m') }}" class="mt-1 block"></div>
         <div><label for="end">To</label><input id="end" type="month" name="end" value="{{ $end->format('Y-m') }}" class="mt-1 block"></div>
-        <div><label for="centre">Centre</label><select id="centre" name="centre" class="mt-1 block"><option value="">All centres</option>@foreach($indicator->centres as $centre)<option value="{{ $centre->id }}" @selected(request('centre') == $centre->id)>{{ $centre->name }}</option>@endforeach</select></div>
+        <div><label for="centre">Centre</label><select id="centre" name="centre" onchange="this.form.submit()" class="mt-1 block"><option value="">All centres</option>@foreach($indicator->centres as $centre)<option value="{{ $centre->id }}" @selected(request('centre') == $centre->id)>{{ $centre->name }}</option>@endforeach</select></div>
         <button class="btn-secondary">Apply</button>
     </form>
 

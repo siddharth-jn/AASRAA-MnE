@@ -6,41 +6,49 @@
                 <p class="max-w-3xl leading-7 text-slate-600">{{ $project->description }}</p>
                 <p class="mt-3 text-sm text-slate-500">Programme: <strong class="text-slate-700">{{ $project->programme->name }}</strong> · Project lead: <strong class="text-slate-700">{{ $project->lead?->name ?? 'Not assigned' }}</strong></p>
             </div>
-            <a href="{{ route('entries.index') }}" class="btn-primary self-start">Enter data</a>
+            <a href="{{ route('entries.index', ['project' => $project->id, 'lock_project' => 1]) }}" class="btn-primary self-start">Enter data</a>
         </div>
     </div>
 
-    @php($tabQuery = request()->except(['section', 'page', 'category']))
-    <nav class="no-print mb-6 flex gap-2 overflow-x-auto pb-1 text-sm font-semibold" aria-label="Project sections">
-        <a href="{{ route('projects.show', array_merge(['project' => $project, 'section' => 'overview'], $tabQuery)) }}" class="badge {{ $section === 'overview' ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-700' }}">Overview</a>
+    <nav class="no-print mb-6 flex gap-3 overflow-x-auto pb-1 text-sm font-semibold" aria-label="Project sections">
+        <a href="{{ route('projects.show', ['project' => $project, 'section' => 'overview']) }}" class="rounded-xl px-5 py-3 {{ $section === 'overview' ? 'bg-brand-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">Overview</a>
         @foreach($sectionCategories as $slug => $category)
             @if($availableCategories->contains($category))
-                <a href="{{ route('projects.show', array_merge(['project' => $project, 'section' => $slug], $tabQuery)) }}" class="badge {{ $section === $slug ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-700' }}">{{ $category === 'KPI' ? 'KPIs' : $category.'s' }}</a>
+                <a href="{{ route('projects.show', ['project' => $project, 'section' => $slug]) }}" class="rounded-xl px-5 py-3 {{ $section === $slug ? 'bg-brand-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">{{ ['Input' => 'Inputs', 'Activity' => 'Activities', 'Output' => 'Outputs', 'Outcome' => 'Outcomes', 'KPI' => 'KPIs'][$category] }}</a>
             @endif
         @endforeach
-        @can('submit')<a href="{{ route('projects.show', array_merge(['project' => $project, 'section' => 'evidence'], $tabQuery)) }}" class="badge {{ $section === 'evidence' ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-700' }}">Evidence</a>@endcan
+        @can('submit')<a href="{{ route('projects.show', ['project' => $project, 'section' => 'evidence']) }}" class="rounded-xl px-5 py-3 {{ $section === 'evidence' ? 'bg-brand-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200' }}">Evidence</a>@endcan
     </nav>
 
-    <form class="no-print card mb-6 grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
-        <input type="hidden" name="section" value="{{ $section }}">
-        <x-reporting-period-fields :period="$period" />
-        <div><label for="centre">Centre</label><select id="centre" name="centre" class="mt-1 w-full"><option value="">All centres</option>@foreach($project->centres as $centre)<option value="{{ $centre->id }}" @selected(request('centre') == $centre->id)>{{ $centre->name }}</option>@endforeach</select></div>
-        @if(array_key_exists($section, $sectionCategories))<div><label for="q">Search {{ strtolower($sectionCategories[$section]) }} indicators</label><input id="q" name="q" value="{{ request('q') }}" placeholder="Name or code" class="mt-1 w-full"></div>@endif
-        <div class="flex items-end"><button class="btn-secondary">Apply filters</button></div>
-    </form>
+    @if($section !== 'overview')
+        <form class="no-print card mb-6 grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
+            <input type="hidden" name="section" value="{{ $section }}">
+            <x-reporting-period-fields :period="$period" :auto-submit="true" />
+            <div><label for="centre">Centre</label><select id="centre" name="centre" onchange="this.form.submit()" class="mt-1 w-full"><option value="">All project centres</option>@foreach($project->centres as $centre)<option value="{{ $centre->id }}" @selected(request('centre') == $centre->id)>{{ $centre->name }}</option>@endforeach</select></div>
+            @if(array_key_exists($section, $sectionCategories))
+                <div><label for="q">Search {{ strtolower($sectionCategories[$section]) }} indicators</label><input id="q" name="q" value="{{ request('q') }}" placeholder="Name or code" class="mt-1 w-full"></div>
+                <div class="flex items-end"><button class="btn-secondary">Search</button></div>
+            @endif
+        </form>
+    @endif
 
-    @if($period['warning'])<div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{{ $period['warning'] }}</div>@endif
-
-    <div class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        @foreach([['Assigned centres', $project->centres->count()], ['Required records', $completeness['expected']], ['Reporting completion', $completeness['rate'].'%'], ['Pending approval', $completeness['pending']]] as [$label, $value])
-            <div class="card p-4"><p class="text-sm text-slate-500">{{ $label }}</p><p class="mt-1 text-2xl font-bold text-ink">{{ $value }}</p></div>
-        @endforeach
-    </div>
+    @if($section !== 'overview' && $period['warning'])<div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{{ $period['warning'] }}</div>@endif
 
     @if($section === 'overview')
+        <div class="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            @foreach([
+                ['Assigned centres', $project->centres->count()],
+                ['Required records · '.$period['start']->format('M Y'), $completeness['expected']],
+                ['Reporting completion · '.$period['start']->format('M Y'), $completeness['rate'].'%'],
+                ['Pending approval · '.$period['start']->format('M Y'), $completeness['pending']],
+            ] as [$label, $value])
+                <div class="card p-4"><p class="text-sm text-slate-500">{{ $label }}</p><p class="mt-1 text-2xl font-bold text-ink">{{ $value }}</p></div>
+            @endforeach
+        </div>
+        <p class="mb-6 text-sm text-slate-500">Reporting completion uses the latest month with project data: submitted records divided by required indicator records due for that month.</p>
         <section class="card p-6">
             <div class="flex items-center justify-between gap-4"><div><h2 class="font-bold text-ink">Reporting locations</h2><p class="text-sm text-slate-500">Centres assigned to this project and available in your access scope.</p></div><span class="badge bg-brand-50 text-brand-700">{{ $project->centres->count() }} centres</span></div>
-            <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">@foreach($project->centres as $centre)<a href="{{ route('centres.show', ['centre' => $centre, 'project' => $project->id, 'period_type' => $period['type'], 'anchor' => request('anchor', '2026-09'), 'start' => request('start'), 'end' => request('end')]) }}" class="block rounded-lg border border-slate-100 p-3 hover:border-brand-200 hover:bg-brand-50"><p class="text-sm font-semibold text-slate-800">{{ $centre->name }}</p><p class="mt-1 text-xs text-slate-500">{{ $centre->type }} · {{ $centre->region }}</p></a>@endforeach</div>
+            <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">@foreach($project->centres as $centre)<a href="{{ route('centres.show', ['centre' => $centre, 'project' => $project->id, 'period_type' => $period['type'], 'anchor' => $period['start']->format('Y-m')]) }}" class="block rounded-lg border border-slate-100 p-3 hover:border-brand-200 hover:bg-brand-50"><p class="text-sm font-semibold text-slate-800">{{ $centre->name }}</p><p class="mt-1 text-xs text-slate-500">{{ $centre->type }} · {{ $centre->region }}</p></a>@endforeach</div>
         </section>
     @elseif(array_key_exists($section, $sectionCategories))
         <section class="card p-6">
@@ -49,7 +57,17 @@
             <div class="mt-4 divide-y divide-slate-100">
                 @forelse($indicators as $indicator)
                     @php($row = $rows->first(fn ($candidate) => $candidate['indicator']->id === $indicator->id))
-                    <a href="{{ route('kpis.show', [$project, $indicator, 'centre' => request('centre')]) }}" class="flex items-center justify-between gap-3 rounded-lg px-2 py-4 hover:bg-slate-50"><div><p class="text-sm font-semibold text-slate-800">{{ $indicator->name }}</p><p class="text-xs text-slate-500">{{ $indicator->unit }} · {{ $indicator->time_aggregation }} over time · {{ $indicator->assignments_count }} centres</p></div><div class="text-right"><p class="text-sm font-bold text-ink">{{ $row && is_numeric($row['achievement']) ? number_format($row['achievement'], $indicator->precision).' '.$indicator->unit : 'View details' }}</p><p class="text-xs text-slate-500">{{ $row['performance_status'] ?? 'No approved result' }}</p></div></a>
+                    <a href="{{ route('kpis.show', [$project, $indicator, 'centre' => request('centre')]) }}" class="flex items-center justify-between gap-3 rounded-lg px-2 py-4 hover:bg-slate-50">
+                        <div><p class="text-sm font-semibold text-slate-800">{{ $indicator->name }}</p><p class="text-xs text-slate-500">{{ $indicator->unit }} · {{ $indicator->time_aggregation }} over time · {{ $indicator->assignments_count }} centres</p></div>
+                        <div class="text-right">
+                            @if($row)
+                                <p class="text-sm font-bold text-ink">Actual: {{ is_numeric($row['achievement']) ? number_format($row['achievement'], $indicator->precision).' '.$indicator->unit : 'Not aggregatable' }}</p>
+                                <p class="text-xs text-slate-500">Target: {{ $row['target_display'] }}{{ $row['target'] !== null ? ' '.$indicator->unit : '' }} · {{ $row['performance_status'] }}</p>
+                            @else
+                                <p class="text-sm font-semibold text-slate-500">No approved result</p>
+                            @endif
+                        </div>
+                    </a>
                 @empty<p class="py-8 text-center text-sm text-slate-500">No indicators match the filters.</p>@endforelse
             </div>
         </section>

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\EvidenceFile;
 use App\Models\IndicatorAssignment;
 use App\Models\IndicatorEntry;
+use App\Services\CompletenessService;
 use App\Services\EntryService;
 use App\Services\ScopeService;
 use App\Services\TargetService;
@@ -21,10 +22,13 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class EntryController extends Controller
 {
-    public function index(Request $request, ScopeService $scope): View
+    public function index(Request $request, ScopeService $scope, CompletenessService $completeness): View
     {
+        $request->validate(['period' => ['nullable', 'date_format:Y-m']]);
         $projectId = $request->integer('project') ?: null;
         $centreId = $request->integer('centre') ?: null;
+        $period = $request->input('period', '2026-09');
+        $periodMonth = CarbonImmutable::parse($period.'-01');
 
         if ($projectId) {
             abort_unless($scope->projects($request->user())->whereKey($projectId)->exists(), 403);
@@ -50,16 +54,21 @@ class EntryController extends Controller
             ->paginate(30)
             ->withQueryString();
 
+        $projects = $scope->projects($request->user())->orderBy('name')->get();
+
         return view('entries.index', [
             'assignments' => $assignments,
-            'period' => $request->input('period', '2026-09'),
-            'projects' => $scope->projects($request->user())->orderBy('name')->get(),
+            'period' => $period,
+            'projects' => $projects,
             'centres' => $scope->centres($request->user())
                 ->when($projectId, fn (Builder $query): Builder => $query->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($projectId)))
                 ->orderBy('name')
                 ->get(),
             'selectedProjectId' => $projectId,
             'selectedCentreId' => $centreId,
+            'selectedProject' => $projects->firstWhere('id', $projectId),
+            'projectLocked' => $projectId !== null && $request->boolean('lock_project'),
+            'completeness' => $completeness->summary($request->user(), $periodMonth->startOfMonth(), $periodMonth->endOfMonth(), $projectId, $centreId),
         ]);
     }
 
@@ -122,7 +131,16 @@ class EntryController extends Controller
         }
         $service->save($request->user(), $assignment, $data['period'], $data, $request->file('evidence', []), $request->input('action') === 'submit');
 
-        return redirect()->route('entries.index', ['period' => substr($data['period'], 0, 7)])->with('success', $request->input('action') === 'submit' ? 'Entry submitted for approval.' : 'Draft saved.');
+        $redirectParameters = ['period' => substr($data['period'], 0, 7)];
+        if ($request->boolean('lock_project')) {
+            $redirectParameters += [
+                'project' => $definition->project_id,
+                'centre' => $assignment->centre_id,
+                'lock_project' => 1,
+            ];
+        }
+
+        return redirect()->route('entries.index', $redirectParameters)->with('success', $request->input('action') === 'submit' ? 'Entry submitted for approval.' : 'Draft saved.');
     }
 
     public function approvals(Request $request, ScopeService $scope): View

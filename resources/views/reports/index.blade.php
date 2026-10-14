@@ -1,17 +1,6 @@
 <x-layouts.app heading="Reports">
-    <form x-data="{ periodType: @js($period['type']) }" class="no-print card mb-6 grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
-        <div>
-            <label for="period_type">Report period</label>
-            <select id="period_type" name="period_type" x-model="periodType" class="mt-1 w-full">
-                @foreach(['monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'half_yearly' => 'Half-yearly', 'annual' => 'Annual', 'ytd' => 'Year to date', 'custom' => 'Custom dates'] as $value => $label)
-                    <option value="{{ $value }}" @selected($period['type'] === $value)>{{ $label }}</option>
-                @endforeach
-            </select>
-        </div>
-        <div>
-            <label for="anchor">Period containing</label>
-            <input id="anchor" type="month" name="anchor" value="{{ request('anchor', '2026-09') }}" class="mt-1 w-full">
-        </div>
+    <form class="no-print card mb-6 grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
+        <x-reporting-period-fields :period="$period" />
         <div>
             <label for="project">Project</label>
             <select id="project" name="project" onchange="this.form.elements.centre.value = ''; this.form.submit()" class="mt-1 w-full">
@@ -29,14 +18,6 @@
                     <option value="{{ $centre->id }}" @selected($selectedCentreId === $centre->id)>{{ $centre->name }}</option>
                 @endforeach
             </select>
-        </div>
-        <div x-cloak x-show="periodType === 'custom'">
-            <label for="start">Custom from</label>
-            <input id="start" type="date" name="start" value="{{ request('start', $period['start']->format('Y-m-d')) }}" class="mt-1 w-full">
-        </div>
-        <div x-cloak x-show="periodType === 'custom'">
-            <label for="end">Custom to</label>
-            <input id="end" type="date" name="end" value="{{ request('end', $period['end']->format('Y-m-d')) }}" class="mt-1 w-full">
         </div>
         <div class="flex flex-wrap items-end gap-2 md:col-span-2 xl:col-span-4">
             <button class="btn-primary">Generate</button>

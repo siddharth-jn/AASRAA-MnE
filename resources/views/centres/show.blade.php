@@ -1,8 +1,7 @@
 <x-layouts.app :heading="$centre->name">
     <form class="no-print card mb-5 grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-6">
-        <x-reporting-period-fields :period="$period" />
-        <div><label for="project">Project</label><select id="project" name="project" class="mt-1 block"><option value="">All projects</option>@foreach($centre->projects as $project)<option value="{{ $project->id }}" @selected(request('project') == $project->id)>{{ $project->name }}</option>@endforeach</select></div>
-        <div class="flex items-end"><button class="btn-secondary">Apply</button></div>
+        <x-reporting-period-fields :period="$period" :auto-submit="true" />
+        <div><label for="project">Project</label><select id="project" name="project" onchange="this.form.submit()" class="mt-1 block"><option value="">All projects</option>@foreach($centre->projects as $project)<option value="{{ $project->id }}" @selected(request('project') == $project->id)>{{ $project->name }}</option>@endforeach</select></div>
     </form>
 
     @if($period['warning'])<div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{{ $period['warning'] }}</div>@endif
