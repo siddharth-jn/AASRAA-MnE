@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Centre;
+use App\Models\EvidenceFile;
 use App\Models\Project;
 use App\Services\CompletenessService;
 use App\Services\ReportingPeriodService;
@@ -10,6 +11,7 @@ use App\Services\ReportingService;
 use App\Services\ScopeService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\View\View;
 
 class PortalController extends Controller
@@ -67,22 +69,63 @@ class PortalController extends Controller
         }
 
         $project->load(['programme', 'lead', 'centres' => fn ($query) => $query->whereIn('centres.id', $scope->centres($request->user())->select('centres.id'))]);
+        $sectionCategories = [
+            'inputs' => 'Input',
+            'activities' => 'Activity',
+            'outputs' => 'Output',
+            'outcomes' => 'Outcome',
+            'kpis' => 'KPI',
+        ];
+        $section = $request->string('section', 'overview')->value();
+        abort_unless($section === 'overview' || $section === 'evidence' || array_key_exists($section, $sectionCategories), 404);
+        if ($section === 'evidence') {
+            Gate::authorize('submit');
+        }
+        $selectedCategory = $sectionCategories[$section] ?? null;
+        $availableCategories = $project->indicators()->where('active', true)->distinct()->pluck('category');
         $indicatorQuery = $project->indicators()->where('active', true)->withCount('assignments');
-        if ($request->filled('category')) {
-            $indicatorQuery->where('category', $request->string('category')->value());
+        if ($selectedCategory) {
+            $indicatorQuery->where('category', $selectedCategory);
         }
         if ($request->filled('q')) {
             $search = '%'.$request->string('q')->trim()->value().'%';
             $indicatorQuery->where(fn ($query) => $query->where('name', 'like', $search)->orWhere('code', 'like', $search));
         }
 
+        $evidence = null;
+        if ($section === 'evidence') {
+            $scopedEntryIds = $scope->entries($request->user())->select('indicator_entries.id');
+            $evidence = EvidenceFile::query()
+                ->whereHas('revision.entry', function (Builder $query) use ($scopedEntryIds, $project, $centreId, $period): void {
+                    $query->whereIn('indicator_entries.id', $scopedEntryIds)
+                        ->whereBetween('period', [$period['data_start'], $period['data_end']])
+                        ->whereHas('assignment.indicator', fn (Builder $indicatorQuery) => $indicatorQuery->where('project_id', $project->id));
+                    if ($centreId) {
+                        $query->whereHas('assignment', fn (Builder $assignmentQuery) => $assignmentQuery->where('centre_id', $centreId));
+                    }
+                })
+                ->with(['user', 'revision.entry.assignment.indicator', 'revision.entry.assignment.centre'])
+                ->latest()
+                ->paginate(24)
+                ->withQueryString();
+        }
+
+        $rows = collect();
+        if ($selectedCategory) {
+            $rows = $centreId
+                ? $reports->report($request->user(), $period['data_start'], $period['data_end'], $project->id, $centreId, null, $selectedCategory)
+                : $reports->consolidatedReport($request->user(), $period['data_start'], $period['data_end'], $project->id, null, $selectedCategory);
+        }
+
         return view('projects.show', [
             'project' => $project,
             'period' => $period,
+            'section' => $section,
+            'sectionCategories' => $sectionCategories,
+            'availableCategories' => $availableCategories,
             'indicators' => $indicatorQuery->orderBy('category')->orderBy('name')->get(),
-            'rows' => $centreId
-                ? $reports->report($request->user(), $period['data_start'], $period['data_end'], $project->id, $centreId)
-                : $reports->consolidatedReport($request->user(), $period['data_start'], $period['data_end'], $project->id),
+            'rows' => $rows,
+            'evidence' => $evidence,
             'completeness' => $completeness->summary($request->user(), $period['data_start'], $period['data_end'], $project->id, $centreId),
         ]);
     }

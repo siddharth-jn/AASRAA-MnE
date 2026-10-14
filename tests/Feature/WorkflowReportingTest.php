@@ -102,6 +102,35 @@ class WorkflowReportingTest extends TestCase
         $this->actingAs($reviewer)->get(route('notifications.index'))->assertOk();
     }
 
+    public function test_project_tabs_show_only_the_selected_section_content(): void
+    {
+        [$assignment, , $reviewer] = $this->configuredAssignment();
+
+        $this->actingAs($reviewer)
+            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'overview']))
+            ->assertOk()
+            ->assertSee('Reporting locations')
+            ->assertDontSee('Activity indicators');
+
+        $this->actingAs($reviewer)
+            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'activities']))
+            ->assertOk()
+            ->assertSee('Activity indicators')
+            ->assertSee($assignment->indicator->name)
+            ->assertDontSee('Reporting locations');
+    }
+
+    public function test_portal_header_uses_a_bell_and_remains_sticky(): void
+    {
+        [, , $reviewer] = $this->configuredAssignment();
+
+        $this->actingAs($reviewer)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('aria-label="Notifications"', false)
+            ->assertSee('sticky top-0', false);
+    }
+
     public function test_private_evidence_preview_is_limited_to_authorized_staff(): void
     {
         Storage::fake('local');
@@ -115,6 +144,10 @@ class WorkflowReportingTest extends TestCase
         $outsider = User::factory()->create(['role' => 'PROGRAM LEAD', 'active' => true]);
 
         $this->actingAs($submitter)->get(route('evidence.preview', $evidence))->assertOk();
+        $this->actingAs($submitter)
+            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'evidence']))
+            ->assertOk()
+            ->assertSee('proof.jpg');
         $this->actingAs($outsider)->get(route('evidence.preview', $evidence))->assertForbidden();
     }
 

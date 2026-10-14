@@ -119,6 +119,7 @@ class IndicatorConfigurationTest extends TestCase
         $this->actingAs($admin)->get('/admin/indicator-definitions/create')->assertOk();
         $this->actingAs($admin)->get('/admin/indicator-targets')->assertOk();
         $this->actingAs($admin)->get('/admin/indicator-targets/create')->assertOk();
+        $this->actingAs($admin)->get('/admin')->assertOk()->assertSee('Back to main dashboard');
     }
 
     public function test_target_changes_are_written_to_the_audit_log(): void

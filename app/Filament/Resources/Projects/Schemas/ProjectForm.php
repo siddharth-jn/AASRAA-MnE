@@ -26,9 +26,11 @@ class ProjectForm
                     ->required()
                     ->columnSpanFull(),
                 Select::make('lead_id')
+                    ->label('Project lead')
                     ->relationship('lead', 'name')
                     ->searchable()
-                    ->preload(),
+                    ->preload()
+                    ->helperText('Select the staff member whose actual account name should appear on the project dashboard.'),
                 Select::make('centres')
                     ->relationship('centres', 'name')
                     ->multiple()
