@@ -9,6 +9,7 @@ use App\Services\EntryService;
 use App\Services\ScopeService;
 use App\Services\TargetService;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -22,7 +23,44 @@ class EntryController extends Controller
 {
     public function index(Request $request, ScopeService $scope): View
     {
-        return view('entries.index', ['assignments' => $scope->assignments($request->user())->with(['indicator.project', 'centre'])->whereHas('indicator', fn ($query) => $query->where('active', true))->paginate(30), 'period' => $request->input('period', '2026-09')]);
+        $projectId = $request->integer('project') ?: null;
+        $centreId = $request->integer('centre') ?: null;
+
+        if ($projectId) {
+            abort_unless($scope->projects($request->user())->whereKey($projectId)->exists(), 403);
+        }
+
+        if ($centreId) {
+            $centreQuery = $scope->centres($request->user())->whereKey($centreId);
+            if ($projectId) {
+                $centreQuery->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($projectId));
+            }
+            abort_unless($centreQuery->exists(), 422, 'The selected centre is not assigned to the selected project.');
+        }
+
+        $assignments = $scope->assignments($request->user())
+            ->with(['indicator.project', 'centre'])
+            ->whereHas('indicator', function (Builder $query) use ($projectId): void {
+                $query->where('active', true);
+                if ($projectId) {
+                    $query->where('project_id', $projectId);
+                }
+            })
+            ->when($centreId, fn (Builder $query): Builder => $query->where('centre_id', $centreId))
+            ->paginate(30)
+            ->withQueryString();
+
+        return view('entries.index', [
+            'assignments' => $assignments,
+            'period' => $request->input('period', '2026-09'),
+            'projects' => $scope->projects($request->user())->orderBy('name')->get(),
+            'centres' => $scope->centres($request->user())
+                ->when($projectId, fn (Builder $query): Builder => $query->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($projectId)))
+                ->orderBy('name')
+                ->get(),
+            'selectedProjectId' => $projectId,
+            'selectedCentreId' => $centreId,
+        ]);
     }
 
     public function edit(Request $request, IndicatorAssignment $assignment, ScopeService $scope, TargetService $targets): View

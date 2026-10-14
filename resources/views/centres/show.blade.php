@@ -1,14 +1,14 @@
 <x-layouts.app :heading="$centre->name">
     <form class="no-print card mb-5 grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-6">
         <x-reporting-period-fields :period="$period" />
-        <div><label for="project">Programme</label><select id="project" name="project" class="mt-1 block"><option value="">All programmes</option>@foreach($centre->projects as $project)<option value="{{ $project->id }}" @selected(request('project') == $project->id)>{{ $project->name }}</option>@endforeach</select></div>
+        <div><label for="project">Project</label><select id="project" name="project" class="mt-1 block"><option value="">All projects</option>@foreach($centre->projects as $project)<option value="{{ $project->id }}" @selected(request('project') == $project->id)>{{ $project->name }}</option>@endforeach</select></div>
         <div class="flex items-end"><button class="btn-secondary">Apply</button></div>
     </form>
 
     @if($period['warning'])<div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{{ $period['warning'] }}</div>@endif
 
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        @foreach([['Location type', $centre->type], ['Region', $centre->region], ['Assigned programmes', $centre->projects->count()], ['Assigned staff', $centre->users->count()], ['Reporting completion', $completeness['rate'].'%'], ['Missing records', $completeness['missing']]] as [$label, $value])
+        @foreach([['Location type', $centre->type], ['Region', $centre->region], ['Assigned projects', $centre->projects->count()], ['Assigned staff', $centre->users->count()], ['Reporting completion', $completeness['rate'].'%'], ['Missing records', $completeness['missing']]] as [$label, $value])
             <div class="card p-5"><p class="text-xs font-semibold uppercase text-slate-400">{{ $label }}</p><p class="mt-2 font-bold text-ink">{{ $value }}</p></div>
         @endforeach
     </div>

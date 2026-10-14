@@ -19,7 +19,6 @@
             @endif
         @endforeach
         @can('submit')<a href="{{ route('projects.show', array_merge(['project' => $project, 'section' => 'evidence'], $tabQuery)) }}" class="badge {{ $section === 'evidence' ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-700' }}">Evidence</a>@endcan
-        <a href="{{ route('reports.index', ['project' => $project->id]) }}" class="badge bg-slate-100 text-slate-700">Reports</a>
     </nav>
 
     <form class="no-print card mb-6 grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">

@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\IndicatorDefinition;
 use App\Services\CompletenessService;
 use App\Services\ReportingPeriodService;
 use App\Services\ReportingService;
 use App\Services\ScopeService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -18,24 +18,29 @@ class ReportController extends Controller
     public function index(Request $request, ReportingService $reports, ReportingPeriodService $periods, CompletenessService $completeness, ScopeService $scope): View
     {
         $period = $periods->fromRequest($request);
-        $filters = $this->filters($request);
-        $rows = $reports->report($request->user(), $period['data_start'], $period['data_end'], ...$filters);
-        $summary = $completeness->summary($request->user(), $period['data_start'], $period['data_end'], $filters[0], $filters[1]);
+        [$projectId, $centreId] = $this->scopeFilters($request, $scope);
+        $projects = $scope->projects($request->user())->orderBy('name')->get();
+        $centres = $scope->centres($request->user())
+            ->when($projectId, fn (Builder $query): Builder => $query->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($projectId)))
+            ->orderBy('name')
+            ->get();
 
         return view('reports.index', [
-            'rows' => $rows,
+            'rows' => $reports->report($request->user(), $period['data_start'], $period['data_end'], $projectId, $centreId),
             'period' => $period,
-            'completeness' => $summary,
-            'projects' => $scope->projects($request->user())->orderBy('name')->get(),
-            'centres' => $scope->centres($request->user())->orderBy('name')->get(),
-            'indicators' => IndicatorDefinition::query()->whereIn('project_id', $scope->projects($request->user())->select('projects.id'))->orderBy('name')->get(),
+            'completeness' => $completeness->summary($request->user(), $period['data_start'], $period['data_end'], $projectId, $centreId),
+            'projects' => $projects,
+            'centres' => $centres,
+            'selectedProjectId' => $projectId,
+            'selectedCentreId' => $centreId,
         ]);
     }
 
-    public function export(Request $request, ReportingService $reports, ReportingPeriodService $periods): StreamedResponse
+    public function export(Request $request, ReportingService $reports, ReportingPeriodService $periods, ScopeService $scope): StreamedResponse
     {
         $period = $periods->fromRequest($request);
-        $rows = $reports->report($request->user(), $period['data_start'], $period['data_end'], ...$this->filters($request));
+        [$projectId, $centreId] = $this->scopeFilters($request, $scope);
+        $rows = $reports->report($request->user(), $period['data_start'], $period['data_end'], $projectId, $centreId);
 
         return response()->streamDownload(function () use ($rows): void {
             $output = fopen('php://output', 'w');
@@ -47,10 +52,11 @@ class ReportController extends Controller
         }, "aasra-impact-{$period['data_start']->format('Ymd')}-{$period['data_end']->format('Ymd')}.csv", ['Content-Type' => 'text/csv']);
     }
 
-    public function excel(Request $request, ReportingService $reports, ReportingPeriodService $periods): StreamedResponse
+    public function excel(Request $request, ReportingService $reports, ReportingPeriodService $periods, ScopeService $scope): StreamedResponse
     {
         $period = $periods->fromRequest($request);
-        $rows = $reports->report($request->user(), $period['data_start'], $period['data_end'], ...$this->filters($request));
+        [$projectId, $centreId] = $this->scopeFilters($request, $scope);
+        $rows = $reports->report($request->user(), $period['data_start'], $period['data_end'], $projectId, $centreId);
 
         return response()->streamDownload(function () use ($rows): void {
             $spreadsheet = new Spreadsheet;
@@ -69,15 +75,25 @@ class ReportController extends Controller
         }, "aasra-impact-{$period['data_start']->format('Ymd')}-{$period['data_end']->format('Ymd')}.xlsx", ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
     }
 
-    /** @return array{?int, ?int, ?int, ?string} */
-    private function filters(Request $request): array
+    /** @return array{?int, ?int} */
+    private function scopeFilters(Request $request, ScopeService $scope): array
     {
-        return [
-            $request->integer('project') ?: null,
-            $request->integer('centre') ?: null,
-            $request->integer('indicator') ?: null,
-            $request->string('category')->trim()->value() ?: null,
-        ];
+        $projectId = $request->integer('project') ?: null;
+        $centreId = $request->integer('centre') ?: null;
+
+        if ($projectId) {
+            abort_unless($scope->projects($request->user())->whereKey($projectId)->exists(), 403);
+        }
+
+        if ($centreId) {
+            $centreQuery = $scope->centres($request->user())->whereKey($centreId);
+            if ($projectId) {
+                $centreQuery->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($projectId));
+            }
+            abort_unless($centreQuery->exists(), 422, 'The selected centre is not assigned to the selected project.');
+        }
+
+        return [$projectId, $centreId];
     }
 
     /** @param array<string, mixed> $row

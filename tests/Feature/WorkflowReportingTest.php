@@ -102,6 +102,107 @@ class WorkflowReportingTest extends TestCase
         $this->actingAs($reviewer)->get(route('notifications.index'))->assertOk();
     }
 
+    public function test_reports_use_project_and_centre_filters_with_project_specific_centre_options(): void
+    {
+        [$assignment, , $reviewer] = $this->configuredAssignment();
+        $otherProject = Project::create([
+            'programme_id' => $assignment->indicator->project->programme_id,
+            'code' => 'OTHER',
+            'name' => 'Other project',
+            'description' => 'Another project',
+        ]);
+        $otherCentre = Centre::create([
+            'code' => 'C2',
+            'name' => 'Other project centre',
+            'type' => 'Education Centre',
+            'region' => 'Dehradun',
+        ]);
+        $otherProject->centres()->attach($otherCentre);
+        $reviewer->projects()->attach($otherProject);
+        $reviewer->centres()->attach($otherCentre);
+
+        $this->actingAs($reviewer)
+            ->get(route('reports.index', ['project' => $assignment->indicator->project_id, 'anchor' => '2026-09']))
+            ->assertOk()
+            ->assertSee($assignment->centre->name)
+            ->assertDontSee($otherCentre->name)
+            ->assertDontSee('name="indicator"', false)
+            ->assertDontSee('name="category"', false)
+            ->assertSee('All project centres');
+
+        $this->actingAs($reviewer)
+            ->get(route('reports.index', ['project' => $assignment->indicator->project_id, 'centre' => $otherCentre->id]))
+            ->assertStatus(422);
+
+        $this->actingAs($reviewer)
+            ->get(route('reports.export', ['project' => $assignment->indicator->project_id, 'centre' => $otherCentre->id]))
+            ->assertStatus(422);
+    }
+
+    public function test_project_centre_dependencies_are_applied_to_data_entry_and_kpi_pages(): void
+    {
+        [$assignment, , $reviewer] = $this->configuredAssignment();
+        $otherProject = Project::create([
+            'programme_id' => $assignment->indicator->project->programme_id,
+            'code' => 'OTHER',
+            'name' => 'Other project',
+            'description' => 'Another project',
+        ]);
+        $otherCentre = Centre::create([
+            'code' => 'C2',
+            'name' => 'Other project centre',
+            'type' => 'Education Centre',
+            'region' => 'Dehradun',
+        ]);
+        $otherProject->centres()->attach($otherCentre);
+        $reviewer->projects()->attach($otherProject);
+        $reviewer->centres()->attach($otherCentre);
+        $otherIndicator = IndicatorDefinition::create([
+            'project_id' => $otherProject->id,
+            'code' => 'OTHER-1',
+            'name' => 'Other project indicator',
+            'description' => 'Only belongs to the other project',
+            'category' => 'Output',
+            'unit' => 'people',
+            'data_type' => 'integer',
+            'frequency' => 'monthly',
+            'time_aggregation' => 'SUM',
+            'centre_aggregation' => 'SUM',
+            'active' => true,
+        ]);
+        IndicatorAssignment::create([
+            'indicator_definition_id' => $otherIndicator->id,
+            'centre_id' => $otherCentre->id,
+            'required' => true,
+        ]);
+
+        $this->actingAs($reviewer)
+            ->get(route('entries.index', ['project' => $assignment->indicator->project_id]))
+            ->assertOk()
+            ->assertSee($assignment->centre->name)
+            ->assertDontSee($otherCentre->name)
+            ->assertDontSee($otherIndicator->name);
+
+        $restrictedCentre = Centre::create([
+            'code' => 'C3',
+            'name' => 'Restricted project centre',
+            'type' => 'Education Centre',
+            'region' => 'Dehradun',
+        ]);
+        $assignment->indicator->project->centres()->attach($restrictedCentre);
+        IndicatorAssignment::create([
+            'indicator_definition_id' => $assignment->indicator_definition_id,
+            'centre_id' => $restrictedCentre->id,
+            'required' => true,
+        ]);
+
+        $this->actingAs($reviewer)
+            ->get(route('kpis.show', [$assignment->indicator->project, $assignment->indicator]))
+            ->assertOk()
+            ->assertSee($assignment->centre->name)
+            ->assertDontSee($restrictedCentre->name);
+    }
+
     public function test_project_tabs_show_only_the_selected_section_content(): void
     {
         [$assignment, , $reviewer] = $this->configuredAssignment();

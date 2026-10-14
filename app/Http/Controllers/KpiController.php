@@ -16,9 +16,13 @@ class KpiController extends Controller
     public function show(Request $request, Project $project, IndicatorDefinition $indicator, ScopeService $scope, ReportingService $reports): View
     {
         abort_unless($indicator->project_id === $project->id && $scope->projects($request->user())->whereKey($project)->exists(), 403);
+        $indicator->load(['centres' => fn ($query) => $query
+            ->whereIn('centres.id', $scope->centres($request->user())->select('centres.id'))
+            ->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($project))
+            ->orderBy('name')]);
         $centreId = $request->integer('centre') ?: null;
         if ($centreId) {
-            abort_unless($scope->centres($request->user())->whereKey($centreId)->exists() && $indicator->centres()->whereKey($centreId)->exists(), 403);
+            abort_unless($indicator->centres->contains('id', $centreId), 403);
         }
 
         $end = CarbonImmutable::parse($request->input('end', '2026-09-30'))->endOfMonth();
@@ -39,7 +43,7 @@ class KpiController extends Controller
 
         return view('kpis.show', [
             'project' => $project,
-            'indicator' => $indicator->load('centres'),
+            'indicator' => $indicator,
             'start' => $start,
             'end' => $end,
             'entries' => $entries,

@@ -6,7 +6,10 @@ use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 
 class UserForm
 {
@@ -34,12 +37,25 @@ class UserForm
                     ->relationship('projects', 'name')
                     ->multiple()
                     ->searchable()
-                    ->preload(),
+                    ->preload()
+                    ->live()
+                    ->afterStateUpdated(fn (Set $set) => $set('centres', [])),
                 Select::make('centres')
-                    ->relationship('centres', 'name')
+                    ->relationship(
+                        'centres',
+                        'name',
+                        modifyQueryUsing: function (Builder $query, Get $get): Builder {
+                            $projectIds = collect($get('projects'))->filter()->all();
+
+                            return $projectIds === []
+                                ? $query->whereRaw('1 = 0')
+                                : $query->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereIn('projects.id', $projectIds));
+                        },
+                    )
                     ->multiple()
                     ->searchable()
-                    ->preload(),
+                    ->preload()
+                    ->helperText('Only centres assigned to the selected projects are available.'),
                 Toggle::make('active')
                     ->default(true)
                     ->required(),

@@ -1,8 +1,8 @@
 <x-layouts.app heading="Reports">
-    <form class="no-print card mb-6 grid gap-4 p-5 md:grid-cols-3 xl:grid-cols-6">
+    <form x-data="{ periodType: @js($period['type']) }" class="no-print card mb-6 grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
         <div>
             <label for="period_type">Report period</label>
-            <select id="period_type" name="period_type" class="mt-1 w-full">
+            <select id="period_type" name="period_type" x-model="periodType" class="mt-1 w-full">
                 @foreach(['monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'half_yearly' => 'Half-yearly', 'annual' => 'Annual', 'ytd' => 'Year to date', 'custom' => 'Custom dates'] as $value => $label)
                     <option value="{{ $value }}" @selected($period['type'] === $value)>{{ $label }}</option>
                 @endforeach
@@ -13,50 +13,32 @@
             <input id="anchor" type="month" name="anchor" value="{{ request('anchor', '2026-09') }}" class="mt-1 w-full">
         </div>
         <div>
-            <label for="start">Custom from</label>
-            <input id="start" type="date" name="start" value="{{ request('start', $period['start']->format('Y-m-d')) }}" class="mt-1 w-full">
-        </div>
-        <div>
-            <label for="end">Custom to</label>
-            <input id="end" type="date" name="end" value="{{ request('end', $period['end']->format('Y-m-d')) }}" class="mt-1 w-full">
-        </div>
-        <div>
             <label for="project">Project</label>
-            <select id="project" name="project" class="mt-1 w-full">
+            <select id="project" name="project" onchange="this.form.elements.centre.value = ''; this.form.submit()" class="mt-1 w-full">
                 <option value="">All projects</option>
                 @foreach($projects as $project)
-                    <option value="{{ $project->id }}" @selected(request('project') == $project->id)>{{ $project->name }}</option>
+                    <option value="{{ $project->id }}" @selected($selectedProjectId === $project->id)>{{ $project->name }}</option>
                 @endforeach
             </select>
         </div>
         <div>
             <label for="centre">Centre</label>
             <select id="centre" name="centre" class="mt-1 w-full">
-                <option value="">All centres</option>
+                <option value="">{{ $selectedProjectId ? 'All project centres' : 'All centres' }}</option>
                 @foreach($centres as $centre)
-                    <option value="{{ $centre->id }}" @selected(request('centre') == $centre->id)>{{ $centre->name }}</option>
+                    <option value="{{ $centre->id }}" @selected($selectedCentreId === $centre->id)>{{ $centre->name }}</option>
                 @endforeach
             </select>
         </div>
-        <div>
-            <label for="indicator">Indicator</label>
-            <select id="indicator" name="indicator" class="mt-1 w-full">
-                <option value="">All indicators</option>
-                @foreach($indicators as $indicator)
-                    <option value="{{ $indicator->id }}" @selected(request('indicator') == $indicator->id)>{{ $indicator->name }}</option>
-                @endforeach
-            </select>
+        <div x-cloak x-show="periodType === 'custom'">
+            <label for="start">Custom from</label>
+            <input id="start" type="date" name="start" value="{{ request('start', $period['start']->format('Y-m-d')) }}" class="mt-1 w-full">
         </div>
-        <div>
-            <label for="category">Category</label>
-            <select id="category" name="category" class="mt-1 w-full">
-                <option value="">All categories</option>
-                @foreach(config('impact.categories') as $category)
-                    <option value="{{ $category }}" @selected(request('category') === $category)>{{ $category }}</option>
-                @endforeach
-            </select>
+        <div x-cloak x-show="periodType === 'custom'">
+            <label for="end">Custom to</label>
+            <input id="end" type="date" name="end" value="{{ request('end', $period['end']->format('Y-m-d')) }}" class="mt-1 w-full">
         </div>
-        <div class="flex items-end gap-2 md:col-span-2">
+        <div class="flex flex-wrap items-end gap-2 md:col-span-2 xl:col-span-4">
             <button class="btn-primary">Generate</button>
             <a href="{{ route('reports.export', request()->query()) }}" class="btn-secondary">CSV</a>
             <a href="{{ route('reports.excel', request()->query()) }}" class="btn-secondary">Excel</a>
@@ -76,7 +58,7 @@
     <div class="mb-5 flex items-end justify-between gap-4">
         <div>
             <h2 class="text-xl font-bold text-ink">Approved performance report</h2>
-            <p class="text-sm text-slate-500">{{ $period['start']->format('d M Y') }} to {{ $period['end']->format('d M Y') }} · {{ $projects->firstWhere('id', request('project'))?->name ?? 'All projects' }} · {{ $centres->firstWhere('id', request('centre'))?->name ?? 'All centres' }} · generated {{ now()->format('d M Y, H:i') }}</p>
+            <p class="text-sm text-slate-500">{{ $period['start']->format('d M Y') }} to {{ $period['end']->format('d M Y') }} · {{ $projects->firstWhere('id', $selectedProjectId)?->name ?? 'All projects' }} · {{ $centres->firstWhere('id', $selectedCentreId)?->name ?? 'All centres' }} · generated {{ now()->format('d M Y, H:i') }}</p>
         </div>
         <button onclick="window.print()" class="no-print btn-secondary">Print report</button>
     </div>
