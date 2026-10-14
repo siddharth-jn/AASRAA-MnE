@@ -4,7 +4,7 @@ Sign in at `/login` with the account provided by an administrator. The dashboard
 
 Use **Projects** to inspect programme descriptions, assigned centres, and configured indicators. Use **Centres** to see a centre's programmes and official approved values.
 
-To report data, open **Data Entry**, choose a month, and select an indicator-centre row. Enter the value that matches the configured type. Ratio indicators ask for a numerator and denominator and calculate the percentage on the server. Attach evidence when required. **Save draft** keeps the record editable. **Submit for approval** places it in the manager queue.
+To report data, open **Data Entry**, choose a month, and select an indicator-centre row. The form can display a number, percentage, ratio calculation, date, yes/no choice, text field, single choice, multiple choice, or status control according to the administrator's configuration. Configured ranges and accepted values are enforced on the server. The current target appears beside the reporting period when one applies. Attach evidence when required. **Save draft** keeps the record editable. **Submit for approval** places it in the manager queue; indicators configured without approval become official when submitted.
 
 Senior Program Leads use **Approvals** to inspect the value, submitter, notes, and evidence. Approve valid records, or enter a comment and return or reject them. A submitter cannot approve their own revision.
 

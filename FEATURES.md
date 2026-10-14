@@ -8,7 +8,10 @@
 - Project and centre scope enforcement on server-side queries
 - Organization, project, and centre views
 - Filament administration for users, programmes, projects, centres, and indicator definitions
-- Configurable types, validation ranges, aggregation methods, evidence requirements, centre assignments, and archival state
+- Guided indicator configuration for categories, typed inputs, accepted values, calculated ratios, validation ranges, date limits, reporting frequency, project and centre assignment, aggregation, evidence, approval, and archival state
+- Monthly, fiscal quarterly, half-yearly, and annual target management with numeric, range, and status targets
+- Definition version snapshots and audited target changes preserve the rules used by historical records
+- Data-entry controls and server validation generated from indicator configuration
 - Draft, submit, approve, return, and reject workflow with revision history and self approval prevention
 - Private evidence upload and authorized download
 - Approved-only period reports, CSV export, and print layout
@@ -16,4 +19,4 @@
 
 ## Next phases
 
-Direct XLSX/CSV mapping and confirmation screens, richer targets UI, notifications, password reset mail flow, chart visualizations, full definition wizard, advanced completeness rules, and production deployment validation remain planned. The schema already includes import batches, rows, notifications, targets, and audit structures for these phases.
+Direct XLSX/CSV mapping and confirmation screens, notifications, password reset mail flow, chart visualizations, advanced completeness rules, and production deployment validation remain planned. The schema already includes import batches, rows, notifications, targets, and audit structures for these phases.

@@ -98,7 +98,9 @@ class DemoSeeder extends Seeder
                         foreach ($periods as $periodOffset => $period) {
                             $base = 8 + (($projectIndex + 1) * 3) + (($centreOffset + 1) * 4) + $indicatorIndex * 5;
                             $target = $indicatorIndex === 5 ? 82 : $base + 5;
-                            IndicatorTarget::updateOrCreate(['indicator_assignment_id' => $assignment->id, 'period' => $period], ['value' => $target, 'is_demo' => true]);
+                            IndicatorTarget::updateOrCreate(['indicator_assignment_id' => $assignment->id, 'period' => $period, 'period_type' => 'monthly'], [
+                                'period_end' => date('Y-m-t', strtotime($period)), 'target_type' => 'numeric', 'value' => $target, 'active' => true, 'is_demo' => true,
+                            ]);
                             if (($projectIndex + $centreOffset + $indicatorIndex + $periodOffset) % 19 === 0) {
                                 continue;
                             }

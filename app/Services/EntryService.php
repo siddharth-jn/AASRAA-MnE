@@ -21,22 +21,30 @@ class EntryService
                 throw ValidationException::withMessages(['entry' => 'This record is awaiting review.']);
             }
             $definition = $assignment->indicator;
-            if ($submit && $definition->evidence_required && $files === [] && ! $entry->currentRevision?->evidence()->exists()) {
-                throw ValidationException::withMessages(['evidence' => 'Supporting evidence is required before submission.']);
+            $existingEvidenceCount = $entry->currentRevision?->evidence()->count() ?? 0;
+            $minimumEvidenceCount = max(1, $definition->min_files);
+            if ($submit && $definition->evidence_required && ($existingEvidenceCount + count($files)) < $minimumEvidenceCount) {
+                throw ValidationException::withMessages(['evidence' => "At least {$minimumEvidenceCount} supporting file(s) are required before submission."]);
             }
+            $status = $submit ? ($definition->approval_required ? 'SUBMITTED' : 'APPROVED') : 'DRAFT';
             $revision = $entry->revisions()->create([
                 'indicator_definition_version_id' => $definition->versions()->latest('version')->value('id'), 'user_id' => $user->id,
-                'version' => ($entry->revisions()->max('version') ?? 0) + 1, 'status' => $submit ? 'SUBMITTED' : 'DRAFT',
+                'version' => ($entry->revisions()->max('version') ?? 0) + 1, 'status' => $status,
                 'value_state' => $data['value_state'] ?? 'reported', 'numeric_value' => $data['numeric_value'] ?? null,
                 'numerator' => $data['numerator'] ?? null, 'denominator' => $data['denominator'] ?? null,
                 'text_value' => $data['text_value'] ?? null, 'date_value' => $data['date_value'] ?? null,
-                'boolean_value' => $data['boolean_value'] ?? null, 'notes' => $data['notes'] ?? null,
-                'submitted_at' => $submit ? now() : null, 'is_demo' => false,
+                'boolean_value' => $data['boolean_value'] ?? null, 'json_value' => $data['json_value'] ?? null,
+                'notes' => $data['notes'] ?? null, 'submitted_at' => $submit ? now() : null,
+                'approved_at' => $status === 'APPROVED' ? now() : null, 'is_demo' => false,
             ]);
             foreach ($files as $file) {
                 $revision->evidence()->create(['user_id' => $user->id, 'path' => $file->store("evidence/{$entry->id}", 'local'), 'original_name' => $file->getClientOriginalName(), 'mime_type' => $file->getMimeType() ?: 'application/octet-stream', 'size' => $file->getSize(), 'is_demo' => false]);
             }
-            $entry->update(['current_revision_id' => $revision->id, 'status' => $revision->status]);
+            $entry->update([
+                'current_revision_id' => $revision->id,
+                'approved_revision_id' => $status === 'APPROVED' ? $revision->id : $entry->approved_revision_id,
+                'status' => $revision->status,
+            ]);
 
             return $entry->fresh(['assignment.indicator', 'currentRevision.evidence']);
         });

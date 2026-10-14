@@ -9,7 +9,7 @@ class EntryRevision extends ImpactModel
 {
     protected function casts(): array
     {
-        return parent::casts() + ['json_value' => 'array', 'submitted_at' => 'datetime', 'approved_at' => 'datetime'];
+        return parent::casts() + ['json_value' => 'array', 'date_value' => 'date', 'boolean_value' => 'boolean', 'submitted_at' => 'datetime', 'approved_at' => 'datetime'];
     }
 
     public function entry(): BelongsTo
@@ -43,6 +43,6 @@ class EntryRevision extends ImpactModel
             return 'Not applicable';
         }
 
-return $this->numeric_value !== null ? rtrim(rtrim(number_format((float) $this->numeric_value, 2, '.', ','), '0'), '.') : ($this->text_value ?? $this->date_value ?? ($this->boolean_value !== null ? ($this->boolean_value ? 'Yes' : 'No') : implode(', ', $this->json_value ?? [])));
+        return $this->numeric_value !== null ? rtrim(rtrim(number_format((float) $this->numeric_value, 2, '.', ','), '0'), '.') : ($this->text_value ?? $this->date_value?->toDateString() ?? ($this->boolean_value !== null ? ($this->boolean_value ? 'Yes' : 'No') : implode(', ', $this->json_value ?? [])));
     }
 }

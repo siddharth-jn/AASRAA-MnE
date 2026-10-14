@@ -20,6 +20,12 @@ class IndicatorDefinitionResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
+    protected static ?string $navigationLabel = 'Indicator definitions';
+
+    protected static ?string $modelLabel = 'indicator definition';
+
+    protected static ?int $navigationSort = 5;
+
     public static function form(Schema $schema): Schema
     {
         return IndicatorDefinitionForm::configure($schema);

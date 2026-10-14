@@ -10,7 +10,18 @@ class IndicatorDefinition extends ImpactModel
 {
     protected function casts(): array
     {
-        return parent::casts() + ['options' => 'array', 'allowed_extensions' => 'array', 'evidence_required' => 'boolean', 'effective_date' => 'date'];
+        return parent::casts() + [
+            'options' => 'array',
+            'allowed_extensions' => 'array',
+            'evidence_required' => 'boolean',
+            'evidence_review_required' => 'boolean',
+            'approval_required' => 'boolean',
+            'value_required' => 'boolean',
+            'target_tracking' => 'boolean',
+            'effective_date' => 'date',
+            'minimum_date' => 'date',
+            'maximum_date' => 'date',
+        ];
     }
 
     public function project(): BelongsTo
@@ -31,6 +42,11 @@ class IndicatorDefinition extends ImpactModel
     public function versions(): HasMany
     {
         return $this->hasMany(IndicatorDefinitionVersion::class);
+    }
+
+    public function targets(): HasMany
+    {
+        return $this->hasManyThrough(IndicatorTarget::class, IndicatorAssignment::class);
     }
 
     protected static function booted(): void

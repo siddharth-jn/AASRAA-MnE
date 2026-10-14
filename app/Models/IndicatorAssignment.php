@@ -23,4 +23,14 @@ class IndicatorAssignment extends ImpactModel
     {
         return $this->hasMany(IndicatorEntry::class);
     }
+
+    public function targets(): HasMany
+    {
+        return $this->hasMany(IndicatorTarget::class);
+    }
+
+    public function getDisplayNameAttribute(): string
+    {
+        return "{$this->indicator->code} · {$this->indicator->name} · {$this->centre->name}";
+    }
 }

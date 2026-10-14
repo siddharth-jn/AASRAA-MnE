@@ -1,6 +1,6 @@
 # AASRA IMPACT
 
-AASRA IMPACT is a Laravel based project monitoring and impact management portal for Aasraa Trust. The current release provides the operational foundation: secure staff login, role and scope controls, programme and centre management, configurable indicators, monthly data entry, private evidence, approval decisions, dashboards, CSV reports, and deterministic demonstration data.
+AASRA IMPACT is a Laravel based project monitoring and impact management portal for Aasraa Trust. The current release includes the operational foundation and Phase 2 indicator system: secure staff login, role and scope controls, programme and centre management, guided KPI configuration, target management, generated data-entry controls, private evidence, approval decisions, dashboards, CSV reports, and deterministic demonstration data.
 
 ## Requirements
 

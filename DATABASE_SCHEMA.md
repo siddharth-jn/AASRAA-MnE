@@ -1,6 +1,6 @@
 # Database schema
 
-The schema is created by `database/migrations/2026_10_13_090128_create_impact_tables.php`.
+The schema is created by the migrations in `database/migrations`. The Phase 2 migration extends indicator validation and evidence settings and adds typed, bounded target periods.
 
 | Area | Tables | Purpose |
 |---|---|---|
@@ -12,4 +12,4 @@ The schema is created by `database/migrations/2026_10_13_090128_create_impact_ta
 | Migration | `import_batches`, `import_rows` | Repeat-safe spreadsheet staging |
 | Audit | `audit_logs` | Administrative model changes |
 
-Foreign keys prevent removal of referenced historical data. Unique constraints prevent duplicate project-centre links, indicator-centre assignments, targets, reporting records, and revision numbers. Date and workflow columns are indexed for dashboard and report filters. Projects and centres use soft deletion; historically used definitions are archived with `active=false`.
+Foreign keys prevent removal of referenced historical data. Unique constraints prevent duplicate project-centre links, indicator-centre assignments, target periods, reporting records, and revision numbers. Target periods store canonical start and end dates for monthly, fiscal quarterly, half-yearly, and annual targets. Date and workflow columns are indexed for dashboard and report filters. Projects and centres use soft deletion; historically used definitions and targets are archived with `active=false`.
