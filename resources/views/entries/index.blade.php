@@ -31,7 +31,7 @@
 
     <div class="mb-5 grid gap-4 sm:grid-cols-3">
         <div class="card p-4"><p class="text-sm text-slate-500">Reporting completion · {{ \Carbon\Carbon::parse($period.'-01')->format('M Y') }}</p><p class="mt-1 text-2xl font-bold text-ink">{{ $completeness['rate'] }}%</p></div>
-        <div class="card p-4"><p class="text-sm text-slate-500">Records reported</p><p class="mt-1 text-2xl font-bold text-ink">{{ $completeness['reported'] }} <span class="text-sm font-medium text-slate-400">of {{ $completeness['expected'] }} required</span></p></div>
+        <div class="card p-4"><p class="text-sm text-slate-500">Records entered</p><p class="mt-1 text-2xl font-bold text-ink">{{ $completeness['reported'] }} <span class="text-sm font-medium text-slate-400">of {{ $completeness['expected'] }} required</span></p></div>
         <div class="card p-4"><p class="text-sm text-slate-500">Records still missing</p><p class="mt-1 text-2xl font-bold text-ink">{{ $completeness['missing'] }}</p></div>
     </div>
 

@@ -45,7 +45,7 @@
                 <div class="card p-4"><p class="text-sm text-slate-500">{{ $label }}</p><p class="mt-1 text-2xl font-bold text-ink">{{ $value }}</p></div>
             @endforeach
         </div>
-        <p class="mb-6 text-sm text-slate-500">Reporting completion uses the latest month with project data: submitted records divided by required indicator records due for that month.</p>
+        <p class="mb-6 text-sm text-slate-500">Reporting completion uses the latest month with project data: required indicator records entered, including drafts, divided by all required records due for that month. Approval progress is tracked separately.</p>
         <section class="card p-6">
             <div class="flex items-center justify-between gap-4"><div><h2 class="font-bold text-ink">Reporting locations</h2><p class="text-sm text-slate-500">Centres assigned to this project and available in your access scope.</p></div><span class="badge bg-brand-50 text-brand-700">{{ $project->centres->count() }} centres</span></div>
             <div class="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">@foreach($project->centres as $centre)<a href="{{ route('centres.show', ['centre' => $centre, 'project' => $project->id, 'period_type' => $period['type'], 'anchor' => $period['start']->format('Y-m')]) }}" class="block rounded-lg border border-slate-100 p-3 hover:border-brand-200 hover:bg-brand-50"><p class="text-sm font-semibold text-slate-800">{{ $centre->name }}</p><p class="mt-1 text-xs text-slate-500">{{ $centre->type }} · {{ $centre->region }}</p></a>@endforeach</div>
