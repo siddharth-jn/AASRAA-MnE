@@ -17,7 +17,7 @@ class IndicatorDefinitionsTable
         return $table
             ->columns([
                 TextColumn::make('project.name')
-                    ->label('Project')
+                    ->label('Programme')
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('code')
@@ -37,7 +37,7 @@ class IndicatorDefinitionsTable
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => Str::headline($state)),
                 TextColumn::make('centres_count')
-                    ->label('Centres')
+                    ->label('Projects')
                     ->counts('centres')
                     ->sortable(),
                 TextColumn::make('versions_count')
@@ -48,7 +48,7 @@ class IndicatorDefinitionsTable
                     ->label('Across time')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('centre_aggregation')
-                    ->label('Across centres')
+                    ->label('Across projects')
                     ->toggleable(isToggledHiddenByDefault: true),
                 IconColumn::make('target_tracking')
                     ->label('Targets')
@@ -73,6 +73,7 @@ class IndicatorDefinitionsTable
             ])
             ->filters([
                 SelectFilter::make('project')
+                    ->label('Programme')
                     ->relationship('project', 'name')
                     ->searchable()
                     ->preload(),

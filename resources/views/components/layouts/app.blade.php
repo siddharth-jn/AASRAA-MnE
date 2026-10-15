@@ -17,7 +17,7 @@
             </a>
 
             <nav class="flex-1 space-y-1 overflow-y-auto p-3 text-sm">
-                @foreach ([['dashboard', 'Dashboard', '⌂'], ['projects.index', 'Projects', '▦'], ['centres.index', 'Centres', '⌖']] as [$routeName, $label, $icon])
+                @foreach ([['dashboard', 'Dashboard', '⌂'], ['programmes.index', 'Programmes', '▦'], ['projects.index', 'Projects', '⌖']] as [$routeName, $label, $icon])
                     <a href="{{ route($routeName) }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs(str_replace('.index', '.*', $routeName)) || request()->routeIs($routeName) ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">{{ $icon }}</span>{{ $label }}</a>
                 @endforeach
                 @can('submit')
@@ -40,7 +40,7 @@
 
             <div class="border-t border-slate-200 px-4 py-3">
                 <p class="truncate text-sm font-semibold text-slate-800">{{ auth()->user()->name }}</p>
-                <p class="truncate text-xs text-slate-500">{{ Str::headline(strtolower(auth()->user()->role)) }}</p>
+                <p class="truncate text-xs text-slate-500">{{ str_replace(['Program', 'Centre'], ['Programme', 'Project'], Str::headline(strtolower(auth()->user()->role))) }}</p>
             </div>
         </aside>
 

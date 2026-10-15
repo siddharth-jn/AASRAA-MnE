@@ -15,14 +15,14 @@ class IndicatorTargetsTable
         return $table
             ->columns([
                 TextColumn::make('assignment.indicator.project.name')
-                    ->label('Project')
+                    ->label('Programme')
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('assignment.indicator.code')
                     ->label('Indicator')
                     ->searchable(),
                 TextColumn::make('assignment.centre.name')
-                    ->label('Centre')
+                    ->label('Project')
                     ->searchable(),
                 TextColumn::make('period_type')
                     ->badge(),

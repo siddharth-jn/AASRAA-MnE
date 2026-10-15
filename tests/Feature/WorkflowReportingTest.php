@@ -93,8 +93,8 @@ class WorkflowReportingTest extends TestCase
         app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 20], [], false);
 
         $this->actingAs($reviewer)->get('/')->assertOk();
-        $this->actingAs($reviewer)->get(route('projects.show', $assignment->indicator->project_id))->assertOk();
-        $this->actingAs($reviewer)->get(route('centres.show', $assignment->centre_id))->assertOk();
+        $this->actingAs($reviewer)->get(route('programmes.show', $assignment->indicator->project_id))->assertOk();
+        $this->actingAs($reviewer)->get(route('projects.show', $assignment->centre_id))->assertOk();
         $this->actingAs($reviewer)->get(route('kpis.show', [$assignment->indicator->project_id, $assignment->indicator_definition_id]))->assertOk();
         $this->actingAs($reviewer)->get(route('reports.index'))->assertOk();
         $this->actingAs($reviewer)->get(route('reports.export'))->assertOk();
@@ -110,11 +110,11 @@ class WorkflowReportingTest extends TestCase
         $this->actingAs($reviewer)
             ->get(route('dashboard'))
             ->assertOk()
+            ->assertSee('Active programmes')
             ->assertSee('Active projects')
-            ->assertSee('Active centres')
             ->assertSee('Pending approvals')
+            ->assertSee(route('programmes.index'), false)
             ->assertSee(route('projects.index'), false)
-            ->assertSee(route('centres.index'), false)
             ->assertSee(route('approvals.index'), false)
             ->assertSee('Recent submissions')
             ->assertSee('Recently approved')
@@ -140,13 +140,13 @@ class WorkflowReportingTest extends TestCase
         app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
 
         $this->actingAs($reviewer)
-            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'overview']))
+            ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'overview']))
             ->assertOk()
             ->assertDontSee('name="period_type"', false)
-            ->assertSee('latest month with project data');
+            ->assertSee('latest month with programme data');
 
         $this->actingAs($reviewer)
-            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'activities', 'period_type' => 'monthly', 'anchor' => '2026-09']))
+            ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'activities', 'period_type' => 'monthly', 'anchor' => '2026-09']))
             ->assertOk()
             ->assertSee('Activities')
             ->assertDontSee('Activitys')
@@ -180,7 +180,7 @@ class WorkflowReportingTest extends TestCase
             ->assertDontSee($otherCentre->name)
             ->assertDontSee('name="indicator"', false)
             ->assertDontSee('name="category"', false)
-            ->assertSee('All project centres');
+            ->assertSee('All programme projects');
 
         $this->actingAs($reviewer)
             ->get(route('reports.index', ['project' => $assignment->indicator->project_id, 'centre' => $otherCentre->id]))
@@ -304,17 +304,17 @@ class WorkflowReportingTest extends TestCase
         [$assignment, , $reviewer] = $this->configuredAssignment();
 
         $this->actingAs($reviewer)
-            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'overview']))
+            ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'overview']))
             ->assertOk()
-            ->assertSee('Reporting locations')
+            ->assertSee('Projects')
             ->assertDontSee('Activity indicators');
 
         $this->actingAs($reviewer)
-            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'activities']))
+            ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'activities']))
             ->assertOk()
             ->assertSee('Activity indicators')
             ->assertSee($assignment->indicator->name)
-            ->assertDontSee('Reporting locations');
+            ->assertDontSee('Projects assigned to this programme');
     }
 
     public function test_project_centre_selection_shows_only_indicators_assigned_to_that_centre(): void
@@ -349,7 +349,7 @@ class WorkflowReportingTest extends TestCase
         ]);
 
         $this->actingAs($reviewer)
-            ->get(route('projects.show', [$project, 'section' => 'activities', 'centre' => $assignment->centre_id]))
+            ->get(route('programmes.show', [$project, 'section' => 'activities', 'centre' => $assignment->centre_id]))
             ->assertOk()
             ->assertSee('Showing indicators assigned to '.$assignment->centre->name.'.')
             ->assertSee($assignment->indicator->name)
@@ -357,9 +357,9 @@ class WorkflowReportingTest extends TestCase
             ->assertSee('centre='.$assignment->centre_id, false);
 
         $this->actingAs($reviewer)
-            ->get(route('projects.show', [$project, 'section' => 'overview']))
+            ->get(route('programmes.show', [$project, 'section' => 'overview']))
             ->assertOk()
-            ->assertSee('View indicators for this centre');
+            ->assertSee('View indicators for this project');
     }
 
     public function test_portal_header_uses_a_bell_and_remains_sticky(): void
@@ -387,7 +387,7 @@ class WorkflowReportingTest extends TestCase
 
         $this->actingAs($submitter)->get(route('evidence.preview', $evidence))->assertOk();
         $this->actingAs($submitter)
-            ->get(route('projects.show', [$assignment->indicator->project, 'section' => 'evidence']))
+            ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'evidence']))
             ->assertOk()
             ->assertSee('proof.jpg');
         $this->actingAs($outsider)->get(route('evidence.preview', $evidence))->assertForbidden();

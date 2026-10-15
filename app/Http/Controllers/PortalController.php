@@ -34,7 +34,7 @@ class PortalController extends Controller
 
     public function projects(Request $request, ScopeService $scope): View
     {
-        return view('projects.index', ['projects' => $scope->projects($request->user())->withCount(['centres', 'indicators'])->with('programme')->paginate(12)]);
+        return view('projects.index', ['projects' => $scope->projects($request->user())->withCount(['centres', 'indicators'])->paginate(12)]);
     }
 
     public function project(Request $request, Project $project, ScopeService $scope, CompletenessService $completeness, ReportingService $reports, ReportingPeriodService $periods): View
@@ -58,7 +58,7 @@ class PortalController extends Controller
             abort_unless($scope->centres($request->user())->whereKey($centreId)->whereHas('projects', fn (Builder $query) => $query->whereKey($project->id))->exists(), 403);
         }
 
-        $project->load(['programme', 'lead', 'centres' => fn ($query) => $query->whereIn('centres.id', $scope->centres($request->user())->select('centres.id'))]);
+        $project->load(['lead', 'centres' => fn ($query) => $query->whereIn('centres.id', $scope->centres($request->user())->select('centres.id'))]);
         if ($section === 'evidence') {
             Gate::authorize('submit');
         }

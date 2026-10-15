@@ -34,7 +34,7 @@ class ImpactTest extends TestCase
         $user->projects()->attach($project);
         $user->centres()->attach($allowed);
 
-        $this->actingAs($user)->get(route('centres.show', $restricted))->assertForbidden();
+        $this->actingAs($user)->get(route('projects.show', $restricted))->assertForbidden();
     }
 
     public function test_submitter_cannot_approve_their_own_submission(): void

@@ -11,7 +11,7 @@
                         <p class="text-xs text-slate-500">{{ $entry->assignment->indicator->project->name }} · {{ $entry->period->format('F Y') }}</p>
                     </div>
                     <div>
-                        <p class="text-xs font-semibold uppercase text-slate-400">Centre</p>
+                        <p class="text-xs font-semibold uppercase text-slate-400">Project</p>
                         <p class="mt-1 text-sm">{{ $entry->assignment->centre->name }}</p>
                     </div>
                     <div>

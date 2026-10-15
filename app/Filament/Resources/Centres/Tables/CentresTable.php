@@ -15,15 +15,23 @@ class CentresTable
         return $table
             ->columns([
                 TextColumn::make('code')
+                    ->label('Project code')
                     ->searchable(),
                 TextColumn::make('name')
+                    ->label('Project name')
                     ->searchable(),
                 TextColumn::make('type')
+                    ->label('Project type')
                     ->searchable(),
                 TextColumn::make('region')
                     ->searchable(),
                 TextColumn::make('capacity')
+                    ->label('Capacity')
                     ->numeric()
+                    ->sortable(),
+                TextColumn::make('projects_count')
+                    ->label('Programmes')
+                    ->counts('projects')
                     ->sortable(),
                 TextColumn::make('source_url')
                     ->searchable(),

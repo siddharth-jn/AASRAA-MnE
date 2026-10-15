@@ -44,7 +44,7 @@ class ReportController extends Controller
 
         return response()->streamDownload(function () use ($rows): void {
             $output = fopen('php://output', 'w');
-            fputcsv($output, ['Project', 'Centre', 'Indicator', 'Category', 'Target', 'Achievement', 'Variance', 'Achievement %', 'Unit', 'Performance', 'Approval']);
+            fputcsv($output, ['Programme', 'Project', 'Indicator', 'Category', 'Target', 'Achievement', 'Variance', 'Achievement %', 'Unit', 'Performance', 'Approval']);
             foreach ($rows as $row) {
                 fputcsv($output, $this->exportRow($row));
             }
@@ -62,7 +62,7 @@ class ReportController extends Controller
             $spreadsheet = new Spreadsheet;
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Approved results');
-            $sheet->fromArray(['Project', 'Centre', 'Indicator', 'Category', 'Target', 'Achievement', 'Variance', 'Achievement %', 'Unit', 'Performance', 'Approval'], null, 'A1');
+            $sheet->fromArray(['Programme', 'Project', 'Indicator', 'Category', 'Target', 'Achievement', 'Variance', 'Achievement %', 'Unit', 'Performance', 'Approval'], null, 'A1');
             $sheet->getStyle('A1:K1')->getFont()->setBold(true);
             foreach ($rows->values() as $index => $row) {
                 $sheet->fromArray($this->exportRow($row), null, 'A'.($index + 2));
@@ -90,7 +90,7 @@ class ReportController extends Controller
             if ($projectId) {
                 $centreQuery->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($projectId));
             }
-            abort_unless($centreQuery->exists(), 422, 'The selected centre is not assigned to the selected project.');
+            abort_unless($centreQuery->exists(), 422, 'The selected project is not assigned to the selected programme.');
         }
 
         return [$projectId, $centreId];

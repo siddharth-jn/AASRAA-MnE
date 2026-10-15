@@ -5,7 +5,6 @@ namespace App\Filament\Resources\Projects\Tables;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
-use Filament\Tables\Filters\TrashedFilter;
 use Filament\Tables\Table;
 
 class ProjectsTable
@@ -14,15 +13,22 @@ class ProjectsTable
     {
         return $table
             ->columns([
-                TextColumn::make('programme.name')
-                    ->searchable(),
                 TextColumn::make('code')
+                    ->label('Programme code')
                     ->searchable(),
                 TextColumn::make('name')
+                    ->label('Programme name')
+                    ->description('Managed by the organisation database')
                     ->searchable(),
                 TextColumn::make('lead.name')
+                    ->label('Programme lead')
                     ->searchable(),
+                TextColumn::make('centres_count')
+                    ->label('Projects')
+                    ->counts('centres')
+                    ->sortable(),
                 IconColumn::make('active')
+                    ->label('Active')
                     ->boolean(),
                 IconColumn::make('is_demo')
                     ->boolean(),
@@ -39,9 +45,7 @@ class ProjectsTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->filters([
-                TrashedFilter::make(),
-            ])
+            ->filters([])
             ->recordActions([
                 EditAction::make(),
             ])

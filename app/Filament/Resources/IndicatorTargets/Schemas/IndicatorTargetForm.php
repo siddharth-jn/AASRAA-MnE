@@ -26,11 +26,11 @@ class IndicatorTargetForm
         return [
             Section::make('Target scope')
                 ->description($indicatorId === null
-                    ? 'Set a target for one configured indicator and centre.'
-                    : 'Set a target for one centre assigned to this indicator.')
+                    ? 'Set a target for one configured indicator and project.'
+                    : 'Set a target for one project assigned to this indicator.')
                 ->schema([
                     Select::make('indicator_assignment_id')
-                        ->label($indicatorId === null ? 'Indicator and centre' : 'Centre')
+                        ->label($indicatorId === null ? 'Indicator and project' : 'Project')
                         ->options(fn (): array => IndicatorAssignment::query()
                             ->with(['indicator.project', 'centre'])
                             ->whereHas('indicator', fn (Builder $query): Builder => $query->where('target_tracking', true))

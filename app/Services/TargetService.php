@@ -63,7 +63,7 @@ class TargetService
             ->when($target, fn ($query) => $query->whereKeyNot($target->getKey()))
             ->exists();
         if ($duplicate) {
-            $errors['period'] = 'A target already exists for this indicator, centre, and reporting period.';
+            $errors['period'] = 'A target already exists for this indicator, project, and reporting period.';
         }
 
         if ($errors !== []) {

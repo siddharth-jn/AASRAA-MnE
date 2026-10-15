@@ -36,6 +36,7 @@ class IndicatorDefinitionForm
                     ->schema([
                         $projectId === null
                             ? Select::make('project_id')
+                                ->label('Programme')
                                 ->relationship('project', 'name')
                                 ->live()
                                 ->required()
@@ -130,10 +131,11 @@ class IndicatorDefinitionForm
                             ->visible(fn (Get $get): bool => in_array($get('data_type'), ['ratio', 'calculated'], true)),
                     ])
                     ->columns(2),
-                Step::make('Centre assignment')
-                    ->description('Choose the reporting locations that must provide this indicator.')
+                Step::make('Project assignment')
+                    ->description('Choose the projects that must report this indicator.')
                     ->schema([
                         Select::make('centres')
+                            ->label('Projects')
                             ->relationship(
                                 'centres',
                                 'name',
@@ -149,17 +151,18 @@ class IndicatorDefinitionForm
                             ->afterStateUpdated(fn (mixed $state, Set $set): mixed => $set('target_centre_ids', array_values($state ?? [])))
                             ->required()
                             ->minItems(1)
-                            ->helperText('Only centres already assigned to the selected project are available.')
+                            ->helperText('Only projects already assigned to the selected programme are available.')
                             ->columnSpanFull(),
                         Hidden::make('target_centre_ids'),
                     ]),
                 Step::make('Aggregation')
-                    ->description('Define how values combine across time and centres, and whether performance is compared with targets.')
+                    ->description('Define how values combine across time and projects, and whether performance is compared with targets.')
                     ->schema([
                         Select::make('time_aggregation')
                             ->options(array_combine(config('impact.aggregations'), config('impact.aggregations')))
                             ->required(),
                         Select::make('centre_aggregation')
+                            ->label('Across projects')
                             ->options(array_combine(config('impact.aggregations'), config('impact.aggregations')))
                             ->required(),
                         Toggle::make('target_tracking')
@@ -179,8 +182,8 @@ class IndicatorDefinitionForm
                     ])
                     ->columns(2),
                 ...($projectId === null ? [] : [
-                    Step::make('Centre targets')
-                        ->description('Set the same target for every selected centre or enter a different value for each centre.')
+                    Step::make('Project targets')
+                        ->description('Set the same target for every selected project or enter a different value for each project.')
                         ->visible(fn (Get $get): bool => (bool) $get('target_tracking'))
                         ->schema([
                             Toggle::make('set_targets_now')
@@ -200,7 +203,7 @@ class IndicatorDefinitionForm
                                 ->required(fn (Get $get): bool => (bool) $get('set_targets_now'))
                                 ->visible(fn (Get $get): bool => (bool) $get('set_targets_now')),
                             Toggle::make('same_target_all_centres')
-                                ->label('Use the same target for all selected centres')
+                                ->label('Use the same target for all selected projects')
                                 ->live()
                                 ->default(true)
                                 ->visible(fn (Get $get): bool => (bool) $get('set_targets_now'))

@@ -1,18 +1,18 @@
 <x-layouts.app :heading="$centre->name">
     <form class="no-print card mb-5 grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-6">
         <x-reporting-period-fields :period="$period" :auto-submit="true" />
-        <div><label for="project">Project</label><select id="project" name="project" onchange="this.form.submit()" class="mt-1 block"><option value="">All projects</option>@foreach($centre->projects as $project)<option value="{{ $project->id }}" @selected(request('project') == $project->id)>{{ $project->name }}</option>@endforeach</select></div>
+        <div><label for="project">Programme</label><select id="project" name="project" onchange="this.form.submit()" class="mt-1 block"><option value="">All programmes</option>@foreach($centre->projects as $project)<option value="{{ $project->id }}" @selected(request('project') == $project->id)>{{ $project->name }}</option>@endforeach</select></div>
     </form>
 
     @if($period['warning'])<div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{{ $period['warning'] }}</div>@endif
 
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        @foreach([['Location type', $centre->type], ['Region', $centre->region], ['Assigned projects', $centre->projects->count()], ['Assigned staff', $centre->users->count()], ['Reporting completion', $completeness['rate'].'%'], ['Missing records', $completeness['missing']]] as [$label, $value])
+        @foreach([['Project type', $centre->type], ['Region', $centre->region], ['Assigned programmes', $centre->projects->count()], ['Assigned staff', $centre->users->count()], ['Reporting completion', $completeness['rate'].'%'], ['Missing records', $completeness['missing']]] as [$label, $value])
             <div class="card p-5"><p class="text-xs font-semibold uppercase text-slate-400">{{ $label }}</p><p class="mt-2 font-bold text-ink">{{ $value }}</p></div>
         @endforeach
     </div>
 
-    <div class="mt-6 table-wrap"><table class="data-table"><thead><tr><th>Project</th><th>Indicator</th><th>Category</th><th>Approved value</th><th>Status</th><th></th></tr></thead><tbody class="divide-y divide-slate-100">
+    <div class="mt-6 table-wrap"><table class="data-table"><thead><tr><th>Programme</th><th>Indicator</th><th>Category</th><th>Approved value</th><th>Status</th><th></th></tr></thead><tbody class="divide-y divide-slate-100">
         @forelse($entries as $entry)
             <tr><td>{{ $entry->assignment->indicator->project->name }}</td><td class="font-semibold text-slate-800">{{ $entry->assignment->indicator->name }}</td><td>{{ $entry->assignment->indicator->category }}</td><td>{{ $entry->approvedRevision?->displayValue() ?? '—' }} {{ $entry->approvedRevision ? $entry->assignment->indicator->unit : '' }}</td><td><span class="badge {{ $entry->status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : ($entry->status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-700') }}">{{ $entry->status }}</span></td><td><a class="text-sm font-semibold text-brand-700" href="{{ route('entries.edit', ['assignment' => $entry->assignment, 'period' => $entry->period->format('Y-m')]) }}">Open</a></td></tr>
         @empty<tr><td colspan="6" class="py-10 text-center text-slate-500">No records are available for this period.</td></tr>@endforelse

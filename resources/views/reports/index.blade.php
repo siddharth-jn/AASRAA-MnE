@@ -2,18 +2,18 @@
     <form class="no-print card mb-6 grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
         <x-reporting-period-fields :period="$period" />
         <div>
-            <label for="project">Project</label>
+            <label for="project">Programme</label>
             <select id="project" name="project" onchange="this.form.elements.centre.value = ''; this.form.submit()" class="mt-1 w-full">
-                <option value="">All projects</option>
+                <option value="">All programmes</option>
                 @foreach($projects as $project)
                     <option value="{{ $project->id }}" @selected($selectedProjectId === $project->id)>{{ $project->name }}</option>
                 @endforeach
             </select>
         </div>
         <div>
-            <label for="centre">Centre</label>
+            <label for="centre">Project</label>
             <select id="centre" name="centre" class="mt-1 w-full">
-                <option value="">{{ $selectedProjectId ? 'All project centres' : 'All centres' }}</option>
+                <option value="">{{ $selectedProjectId ? 'All programme projects' : 'All projects' }}</option>
                 @foreach($centres as $centre)
                     <option value="{{ $centre->id }}" @selected($selectedCentreId === $centre->id)>{{ $centre->name }}</option>
                 @endforeach
@@ -39,14 +39,14 @@
     <div class="mb-5 flex items-end justify-between gap-4">
         <div>
             <h2 class="text-xl font-bold text-ink">Approved performance report</h2>
-            <p class="text-sm text-slate-500">{{ $period['start']->format('d M Y') }} to {{ $period['end']->format('d M Y') }} · {{ $projects->firstWhere('id', $selectedProjectId)?->name ?? 'All projects' }} · {{ $centres->firstWhere('id', $selectedCentreId)?->name ?? 'All centres' }} · generated {{ now()->format('d M Y, H:i') }}</p>
+            <p class="text-sm text-slate-500">{{ $period['start']->format('d M Y') }} to {{ $period['end']->format('d M Y') }} · {{ $projects->firstWhere('id', $selectedProjectId)?->name ?? 'All programmes' }} · {{ $centres->firstWhere('id', $selectedCentreId)?->name ?? 'All projects' }} · generated {{ now()->format('d M Y, H:i') }}</p>
         </div>
         <button onclick="window.print()" class="no-print btn-secondary">Print report</button>
     </div>
 
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Project / centre</th><th>Indicator</th><th>Target</th><th>Achievement</th><th>Variance</th><th>Achievement</th><th>Trend</th><th>Performance</th><th>Approval</th></tr></thead>
+            <thead><tr><th>Programme / project</th><th>Indicator</th><th>Target</th><th>Achievement</th><th>Variance</th><th>Achievement</th><th>Trend</th><th>Performance</th><th>Approval</th></tr></thead>
             <tbody class="divide-y divide-slate-100">
                 @forelse($rows as $row)
                     <tr>

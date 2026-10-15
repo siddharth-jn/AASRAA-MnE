@@ -50,10 +50,13 @@ class UserForm
                     ->revealable()
                     ->dehydrated(false),
                 Select::make('role')
-                    ->options(array_combine(config('impact.roles'), config('impact.roles')))
+                    ->options(collect(config('impact.roles'))->mapWithKeys(fn (string $role): array => [
+                        $role => str_replace(['Program', 'Centre'], ['Programme', 'Project'], str($role)->lower()->headline()->toString()),
+                    ])->all())
                     ->required()
                     ->default('VIEWER'),
                 Select::make('projects')
+                    ->label('Programmes')
                     ->relationship('projects', 'name')
                     ->multiple()
                     ->searchable()
@@ -62,14 +65,14 @@ class UserForm
                     ->afterStateUpdated(fn (Set $set) => $set('centres', [])),
                 Actions::make([
                     Action::make('selectAllProjects')
-                        ->label('Select all projects')
+                        ->label('Select all programmes')
                         ->link()
                         ->action(function (Set $set): void {
                             $set('projects', Project::query()->orderBy('name')->pluck('id')->all());
                             $set('centres', []);
                         }),
                     Action::make('clearProjects')
-                        ->label('Clear projects')
+                        ->label('Clear programmes')
                         ->color('gray')
                         ->link()
                         ->action(function (Set $set): void {
@@ -78,6 +81,7 @@ class UserForm
                         }),
                 ])->key('projectSelectionActions'),
                 Select::make('centres')
+                    ->label('Projects')
                     ->relationship(
                         'centres',
                         'name',
@@ -92,10 +96,10 @@ class UserForm
                     ->multiple()
                     ->searchable()
                     ->preload()
-                    ->helperText('Only centres assigned to the selected projects are available.'),
+                    ->helperText('Only projects assigned to the selected programmes are available.'),
                 Actions::make([
                     Action::make('selectAllCentres')
-                        ->label('Select all centres in selected projects')
+                        ->label('Select all projects in selected programmes')
                         ->link()
                         ->disabled(fn (Get $get): bool => collect($get('projects'))->filter()->isEmpty())
                         ->action(function (Get $get, Set $set): void {
@@ -109,7 +113,7 @@ class UserForm
                             $set('centres', $centreIds);
                         }),
                     Action::make('clearCentres')
-                        ->label('Clear centres')
+                        ->label('Clear projects')
                         ->color('gray')
                         ->link()
                         ->action(fn (Set $set): mixed => $set('centres', [])),

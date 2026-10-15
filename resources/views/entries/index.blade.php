@@ -6,12 +6,12 @@
             <input id="period" name="period" type="month" value="{{ $period }}" onchange="this.form.submit()" class="mt-1 w-full">
         </div>
         @if($projectLocked)
-            <div><p class="text-sm font-medium text-slate-700">Project</p><p class="mt-3 font-semibold text-ink">{{ $selectedProject->name }}</p></div>
+            <div><p class="text-sm font-medium text-slate-700">Programme</p><p class="mt-3 font-semibold text-ink">{{ $selectedProject->name }}</p></div>
         @else
             <div>
-                <label for="project">Project</label>
+                <label for="project">Programme</label>
                 <select id="project" name="project" onchange="this.form.elements.centre.value = ''; this.form.submit()" class="mt-1 w-full">
-                    <option value="">All projects</option>
+                    <option value="">All programmes</option>
                     @foreach($projects as $project)
                         <option value="{{ $project->id }}" @selected($selectedProjectId === $project->id)>{{ $project->name }}</option>
                     @endforeach
@@ -19,9 +19,9 @@
             </div>
         @endif
         <div>
-            <label for="centre">Centre</label>
+            <label for="centre">Project</label>
             <select id="centre" name="centre" onchange="this.form.submit()" class="mt-1 w-full">
-                <option value="">{{ $selectedProjectId ? 'All project centres' : 'All centres' }}</option>
+                <option value="">{{ $selectedProjectId ? 'All programme projects' : 'All projects' }}</option>
                 @foreach($centres as $centre)
                     <option value="{{ $centre->id }}" @selected($selectedCentreId === $centre->id)>{{ $centre->name }}</option>
                 @endforeach
@@ -37,7 +37,7 @@
 
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Project / Indicator</th><th>Centre</th><th>Input</th><th>Evidence</th><th></th></tr></thead>
+            <thead><tr><th>Programme / Indicator</th><th>Project</th><th>Input</th><th>Evidence</th><th></th></tr></thead>
             <tbody class="divide-y divide-slate-100">
                 @forelse($assignments as $assignment)
                     <tr>

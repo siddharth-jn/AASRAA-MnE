@@ -23,7 +23,7 @@ class IndicatorsRelationManager extends RelationManager
 
     protected static string $relationship = 'indicators';
 
-    protected static ?string $title = 'Project indicators';
+    protected static ?string $title = 'Programme indicators';
 
     public function form(Schema $schema): Schema
     {
@@ -48,7 +48,7 @@ class IndicatorsRelationManager extends RelationManager
                     ->badge()
                     ->formatStateUsing(fn (string $state): string => Str::headline($state)),
                 TextColumn::make('centres_count')
-                    ->label('Centres')
+                    ->label('Projects')
                     ->counts('centres')
                     ->sortable(),
                 TextColumn::make('targets_count')

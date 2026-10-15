@@ -30,6 +30,7 @@ class UsersTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('role')
+                    ->formatStateUsing(fn (string $state): string => str_replace(['Program', 'Centre'], ['Programme', 'Project'], str($state)->lower()->headline()->toString()))
                     ->searchable(),
                 IconColumn::make('active')
                     ->boolean(),

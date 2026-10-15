@@ -38,28 +38,28 @@ class AdminOverview extends StatsOverviewWidget
                 ->description('Full configuration access')
                 ->descriptionIcon('heroicon-m-shield-check')
                 ->url(UserResource::getUrl()),
-            Stat::make('Senior program leads', $roleCounts->get('SENIOR PROGRAM LEAD', 0))
+            Stat::make('Senior programme leads', $roleCounts->get('SENIOR PROGRAM LEAD', 0))
                 ->description('Review and approval access')
                 ->descriptionIcon('heroicon-m-check-badge')
                 ->url(UserResource::getUrl()),
-            Stat::make('Program leads', $roleCounts->get('PROGRAM LEAD', 0))
+            Stat::make('Programme leads', $roleCounts->get('PROGRAM LEAD', 0))
                 ->description('Reporting and import access')
                 ->descriptionIcon('heroicon-m-user-group')
                 ->url(UserResource::getUrl()),
-            Stat::make('Centre coordinators', $roleCounts->get('CENTRE COORDINATOR', 0))
-                ->description('Centre reporting access')
+            Stat::make('Project coordinators', $roleCounts->get('CENTRE COORDINATOR', 0))
+                ->description('Project reporting access')
                 ->descriptionIcon('heroicon-m-map-pin')
                 ->url(UserResource::getUrl()),
             Stat::make('Viewers', $roleCounts->get('VIEWER', 0))
                 ->description('Read-only reporting access')
                 ->descriptionIcon('heroicon-m-eye')
                 ->url(UserResource::getUrl()),
-            Stat::make('Active projects', Project::query()->where('active', true)->count())
-                ->description('Configured project portfolio')
+            Stat::make('Active programmes', Project::query()->where('active', true)->count())
+                ->description('Programmes used for monitoring')
                 ->descriptionIcon('heroicon-m-rectangle-stack')
                 ->url(ProjectResource::getUrl()),
-            Stat::make('Active centres', Centre::query()->where('active', true)->count())
-                ->description('Operating reporting locations')
+            Stat::make('Active projects', Centre::query()->where('active', true)->count())
+                ->description('Projects assigned to programmes')
                 ->descriptionIcon('heroicon-m-building-office-2')
                 ->url(CentreResource::getUrl()),
             Stat::make('Active indicators', IndicatorDefinition::query()->where('active', true)->count())

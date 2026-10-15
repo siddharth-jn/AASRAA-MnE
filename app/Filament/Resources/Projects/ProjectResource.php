@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\Projects;
 
-use App\Filament\Resources\Projects\Pages\CreateProject;
 use App\Filament\Resources\Projects\Pages\EditProject;
 use App\Filament\Resources\Projects\Pages\ListProjects;
 use App\Filament\Resources\Projects\RelationManagers\IndicatorsRelationManager;
@@ -22,6 +21,16 @@ class ProjectResource extends Resource
     protected static ?string $model = Project::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+
+    protected static ?string $navigationLabel = 'Programmes';
+
+    protected static ?string $modelLabel = 'programme';
+
+    protected static ?string $pluralModelLabel = 'programmes';
+
+    protected static ?string $slug = 'programmes';
+
+    protected static ?int $navigationSort = 2;
 
     public static function form(Schema $schema): Schema
     {
@@ -44,9 +53,43 @@ class ProjectResource extends Resource
     {
         return [
             'index' => ListProjects::route('/'),
-            'create' => CreateProject::route('/create'),
             'edit' => EditProject::route('/{record}/edit'),
         ];
+    }
+
+    public static function canCreate(): bool
+    {
+        return false;
+    }
+
+    public static function canDelete($record): bool
+    {
+        return false;
+    }
+
+    public static function canDeleteAny(): bool
+    {
+        return false;
+    }
+
+    public static function canForceDelete($record): bool
+    {
+        return false;
+    }
+
+    public static function canForceDeleteAny(): bool
+    {
+        return false;
+    }
+
+    public static function canRestore($record): bool
+    {
+        return false;
+    }
+
+    public static function canRestoreAny(): bool
+    {
+        return false;
     }
 
     public static function getRecordRouteBindingEloquentQuery(): Builder

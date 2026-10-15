@@ -203,14 +203,14 @@ class ImportService
         $centre = $project->centres->first(fn (Centre $candidate): bool => strcasecmp($candidate->code, $centreReference) === 0 || strcasecmp($candidate->name, $centreReference) === 0);
         $indicator = $project->indicators->first(fn (IndicatorDefinition $candidate): bool => strcasecmp($candidate->code, $indicatorReference) === 0 || strcasecmp($candidate->name, $indicatorReference) === 0);
         if (! $centre) {
-            return ['invalid', null, "Unknown centre code or name: {$centreReference}"];
+            return ['invalid', null, "Unknown project code or name: {$centreReference}"];
         }
         if (! $indicator) {
             return ['invalid', null, "Unknown indicator code or name: {$indicatorReference}"];
         }
         $assignment = $indicator->assignments->firstWhere('centre_id', $centre->id);
         if (! $assignment) {
-            return ['invalid', null, 'The indicator is not assigned to this centre.'];
+            return ['invalid', null, 'The indicator is not assigned to this project.'];
         }
 
         try {
@@ -223,7 +223,7 @@ class ImportService
         }
         $key = $assignment->id.'-'.$period->toDateString();
         if (isset($seen[$key])) {
-            return ['duplicate', ['assignment_id' => $assignment->id, 'period' => $period->toDateString()], 'A reporting record already exists for this indicator, centre, and period.'];
+            return ['duplicate', ['assignment_id' => $assignment->id, 'period' => $period->toDateString()], 'A reporting record already exists for this indicator, project, and period.'];
         }
         $seen[$key] = true;
 

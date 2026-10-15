@@ -22,6 +22,16 @@ class CentreResource extends Resource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
 
+    protected static ?string $navigationLabel = 'Projects';
+
+    protected static ?string $modelLabel = 'project';
+
+    protected static ?string $pluralModelLabel = 'projects';
+
+    protected static ?string $slug = 'projects';
+
+    protected static ?int $navigationSort = 3;
+
     public static function form(Schema $schema): Schema
     {
         return CentreForm::configure($schema);

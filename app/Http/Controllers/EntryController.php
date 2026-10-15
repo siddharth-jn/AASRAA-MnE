@@ -39,7 +39,7 @@ class EntryController extends Controller
             if ($projectId) {
                 $centreQuery->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($projectId));
             }
-            abort_unless($centreQuery->exists(), 422, 'The selected centre is not assigned to the selected project.');
+            abort_unless($centreQuery->exists(), 422, 'The selected project is not assigned to the selected programme.');
         }
 
         $assignments = $scope->assignments($request->user())

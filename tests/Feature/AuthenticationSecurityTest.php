@@ -151,13 +151,13 @@ class AuthenticationSecurityTest extends TestCase
         $this->actingAs($admin)
             ->get(route('profile.show'))
             ->assertOk()
-            ->assertSee('You can access all projects as an administrator.')
+            ->assertSee('You can access all programmes as an administrator.')
             ->assertSee('Open administration');
 
         $this->actingAs($viewer)
             ->get(route('profile.show'))
             ->assertOk()
-            ->assertSee('No projects have been assigned.')
+            ->assertSee('No programmes have been assigned.')
             ->assertDontSee('Open administration');
     }
 }

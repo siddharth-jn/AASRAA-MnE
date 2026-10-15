@@ -5,10 +5,10 @@
     @if($batch->status !== 'completed')
         <form method="POST" action="{{ route('imports.validate', $batch) }}" class="card mb-6 p-6">
             @csrf
-            <h2 class="font-bold text-ink">Map source columns</h2><p class="mt-1 text-sm text-slate-500">Centre and indicator values may use an internal code or exact configured name.</p>
+            <h2 class="font-bold text-ink">Map source columns</h2><p class="mt-1 text-sm text-slate-500">Project and indicator values may use an internal code or exact configured name.</p>
             <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                @foreach(['centre' => 'Centre code or name', 'indicator' => 'Indicator code or name', 'period' => 'Reporting period', 'value' => 'Value', 'numerator' => 'Numerator', 'denominator' => 'Denominator', 'notes' => 'Notes'] as $field => $label)
-                    <div><label for="mapping-{{ $field }}">{{ $label }} {{ in_array($field, ['centre', 'indicator', 'period'], true) ? '*' : '' }}</label><select id="mapping-{{ $field }}" name="mapping[{{ $field }}]" class="mt-1 w-full"><option value="">Not mapped</option>@foreach($batch->columns as $column)<option value="{{ $column }}" @selected(($batch->mapping[$field] ?? null) === $column || strcasecmp(str_replace('_', ' ', $column), str_replace('_', ' ', $field)) === 0)>{{ $column }}</option>@endforeach</select></div>
+                @foreach(['centre' => 'Project code or name', 'indicator' => 'Indicator code or name', 'period' => 'Reporting period', 'value' => 'Value', 'numerator' => 'Numerator', 'denominator' => 'Denominator', 'notes' => 'Notes'] as $field => $label)
+                    <div><label for="mapping-{{ $field }}">{{ $label }} {{ in_array($field, ['centre', 'indicator', 'period'], true) ? '*' : '' }}</label><select id="mapping-{{ $field }}" name="mapping[{{ $field }}]" class="mt-1 w-full"><option value="">Not mapped</option>@foreach($batch->columns as $column)<option value="{{ $column }}" @selected(($batch->mapping[$field] ?? null) === $column || strcasecmp(str_replace('_', ' ', $column), str_replace('_', ' ', $field)) === 0 || ($field === 'centre' && strcasecmp(str_replace('_', ' ', $column), 'project code') === 0))>{{ $column }}</option>@endforeach</select></div>
                 @endforeach
             </div>
             <div class="mt-5 flex justify-end"><button class="btn-primary">Validate rows</button></div>

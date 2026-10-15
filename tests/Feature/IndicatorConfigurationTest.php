@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\Projects\Pages\EditProject;
+use App\Filament\Resources\Projects\Pages\ListProjects;
 use App\Filament\Resources\Projects\ProjectResource;
 use App\Filament\Resources\Projects\RelationManagers\IndicatorsRelationManager;
 use App\Models\AuditLog;
@@ -24,6 +25,25 @@ use Tests\TestCase;
 class IndicatorConfigurationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_programme_catalogue_is_read_only_while_monitoring_setup_remains_editable(): void
+    {
+        $admin = User::factory()->create(['role' => 'ADMIN', 'active' => true]);
+        $programme = $this->createAssignment()->indicator->project;
+
+        $this->assertFalse(ProjectResource::canCreate());
+        $this->assertFalse(ProjectResource::canDelete($programme));
+        $this->actingAs($admin)->get('/admin/programmes/create')->assertNotFound();
+
+        Livewire::actingAs($admin)
+            ->test(ListProjects::class)
+            ->assertActionDoesNotExist('create');
+
+        Livewire::actingAs($admin)
+            ->test(EditProject::class, ['record' => $programme->getRouteKey()])
+            ->assertFormFieldDisabled('code')
+            ->assertFormFieldDisabled('name');
+    }
 
     public function test_indicator_changes_create_an_immutable_definition_version(): void
     {
@@ -169,9 +189,9 @@ class IndicatorConfigurationTest extends TestCase
             ->assertDontSee('Indicator definitions');
 
         $this->actingAs($admin)
-            ->get(route('projects.show', $assignment->indicator->project))
+            ->get(route('programmes.show', $assignment->indicator->project))
             ->assertOk()
-            ->assertSee('Edit project &amp; indicators', false);
+            ->assertSee('Manage programme &amp; indicators', false);
 
         Livewire::actingAs($admin)
             ->test(IndicatorsRelationManager::class, [
@@ -276,7 +296,7 @@ class IndicatorConfigurationTest extends TestCase
         );
 
         $this->actingAs($admin)
-            ->get(route('projects.show', [
+            ->get(route('programmes.show', [
                 $assignment->indicator->project,
                 'section' => 'activities',
                 'centre' => $assignment->centre_id,

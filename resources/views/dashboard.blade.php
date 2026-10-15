@@ -1,14 +1,14 @@
 <x-layouts.app heading="Organization dashboard">
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <a href="{{ route('projects.index') }}" class="card group p-5 hover:border-brand-200 hover:shadow-sm">
+        <a href="{{ route('programmes.index') }}" class="card group p-5 hover:border-brand-200 hover:shadow-sm">
             <div class="flex items-start justify-between gap-4">
-                <div><p class="text-sm font-medium text-slate-500">Active projects</p><p class="mt-2 text-3xl font-bold text-ink">{{ $stats['projects'] }}</p><p class="mt-2 text-xs text-slate-400">View the project portfolio</p></div>
+                <div><p class="text-sm font-medium text-slate-500">Active programmes</p><p class="mt-2 text-3xl font-bold text-ink">{{ $stats['projects'] }}</p><p class="mt-2 text-xs text-slate-400">View the programme portfolio</p></div>
                 <span class="text-xl text-slate-300 transition group-hover:translate-x-1 group-hover:text-brand-600">→</span>
             </div>
         </a>
-        <a href="{{ route('centres.index') }}" class="card group p-5 hover:border-brand-200 hover:shadow-sm">
+        <a href="{{ route('projects.index') }}" class="card group p-5 hover:border-brand-200 hover:shadow-sm">
             <div class="flex items-start justify-between gap-4">
-                <div><p class="text-sm font-medium text-slate-500">Active centres</p><p class="mt-2 text-3xl font-bold text-ink">{{ $stats['centres'] }}</p><p class="mt-2 text-xs text-slate-400">View all operating centres</p></div>
+                <div><p class="text-sm font-medium text-slate-500">Active projects</p><p class="mt-2 text-3xl font-bold text-ink">{{ $stats['centres'] }}</p><p class="mt-2 text-xs text-slate-400">View all reporting projects</p></div>
                 <span class="text-xl text-slate-300 transition group-hover:translate-x-1 group-hover:text-brand-600">→</span>
             </div>
         </a>

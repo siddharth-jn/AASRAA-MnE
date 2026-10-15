@@ -96,8 +96,8 @@ class ImportController extends Controller
         if ($format === 'csv') {
             return response()->streamDownload(function (): void {
                 $output = fopen('php://output', 'w');
-                fputcsv($output, ['centre_code', 'indicator_code', 'period', 'value', 'numerator', 'denominator', 'notes']);
-                fputcsv($output, ['CENTRE-CODE', 'INDICATOR-CODE', '2026-09-01', '25', '', '', 'Replace this sample row']);
+                fputcsv($output, ['project_code', 'indicator_code', 'period', 'value', 'numerator', 'denominator', 'notes']);
+                fputcsv($output, ['PROJECT-CODE', 'INDICATOR-CODE', '2026-09-01', '25', '', '', 'Replace this sample row']);
                 fclose($output);
             }, "{$project->code}-import-template.csv", ['Content-Type' => 'text/csv']);
         }
@@ -107,12 +107,12 @@ class ImportController extends Controller
             $spreadsheet = new Spreadsheet;
             $data = $spreadsheet->getActiveSheet();
             $data->setTitle('Import data');
-            $data->fromArray(['centre_code', 'indicator_code', 'period', 'value', 'numerator', 'denominator', 'notes'], null, 'A1');
-            $data->fromArray(['CENTRE-CODE', 'INDICATOR-CODE', '2026-09-01', 25, null, null, 'Replace this sample row'], null, 'A2');
+            $data->fromArray(['project_code', 'indicator_code', 'period', 'value', 'numerator', 'denominator', 'notes'], null, 'A1');
+            $data->fromArray(['PROJECT-CODE', 'INDICATOR-CODE', '2026-09-01', 25, null, null, 'Replace this sample row'], null, 'A2');
             $data->getStyle('A1:G1')->getFont()->setBold(true);
             $reference = $spreadsheet->createSheet();
             $reference->setTitle('Reference');
-            $reference->fromArray(['Centre code', 'Centre name', 'Indicator code', 'Indicator name', 'Data type'], null, 'A1');
+            $reference->fromArray(['Project code', 'Project name', 'Indicator code', 'Indicator name', 'Data type'], null, 'A1');
             $row = 2;
             foreach ($project->centres as $centre) {
                 foreach ($project->indicators as $indicator) {

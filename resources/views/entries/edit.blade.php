@@ -5,11 +5,11 @@
         <div class="card mb-5 p-6">
             <div class="grid gap-5 sm:grid-cols-2">
                 <div>
-                    <p class="text-xs font-semibold uppercase text-slate-400">Project</p>
+                    <p class="text-xs font-semibold uppercase text-slate-400">Programme</p>
                     <p class="mt-1 font-semibold text-ink">{{ $definition->project->name }}</p>
                 </div>
                 <div>
-                    <p class="text-xs font-semibold uppercase text-slate-400">Centre</p>
+                    <p class="text-xs font-semibold uppercase text-slate-400">Project</p>
                     <p class="mt-1 font-semibold text-ink">{{ $assignment->centre->name }}</p>
                 </div>
                 <div>

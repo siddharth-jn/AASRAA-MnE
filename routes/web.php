@@ -24,11 +24,12 @@ Route::middleware('guest')->group(function (): void {
 
 Route::middleware('auth')->group(function (): void {
     Route::get('/', [PortalController::class, 'dashboard'])->name('dashboard');
-    Route::get('/projects', [PortalController::class, 'projects'])->name('projects.index');
-    Route::get('/projects/{project}', [PortalController::class, 'project'])->name('projects.show');
-    Route::get('/projects/{project}/indicators/{indicator}', [KpiController::class, 'show'])->name('kpis.show');
-    Route::get('/centres', [PortalController::class, 'centres'])->name('centres.index');
-    Route::get('/centres/{centre}', [PortalController::class, 'centre'])->name('centres.show');
+    Route::get('/programmes', [PortalController::class, 'projects'])->name('programmes.index');
+    Route::get('/programmes/{project}', [PortalController::class, 'project'])->name('programmes.show');
+    Route::get('/programmes/{project}/indicators/{indicator}', [KpiController::class, 'show'])->name('kpis.show');
+    Route::get('/projects', [PortalController::class, 'centres'])->name('projects.index');
+    Route::get('/projects/{centre}', [PortalController::class, 'centre'])->name('projects.show');
+    Route::redirect('/centres', '/projects');
     Route::get('/data-entry', [EntryController::class, 'index'])->name('entries.index');
     Route::get('/data-entry/{assignment}', [EntryController::class, 'edit'])->name('entries.edit');
     Route::post('/data-entry/{assignment}', [EntryController::class, 'store'])->name('entries.store');
