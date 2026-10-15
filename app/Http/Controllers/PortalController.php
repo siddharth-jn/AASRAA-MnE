@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Centre;
 use App\Models\EvidenceFile;
+use App\Models\IndicatorDefinition;
+use App\Models\IndicatorTarget;
 use App\Models\Project;
 use App\Services\CompletenessService;
 use App\Services\ReportingPeriodService;
@@ -101,10 +103,28 @@ class PortalController extends Controller
         }
 
         $rows = collect();
+        $targetSummaries = collect();
+        $indicators = $indicatorQuery->orderBy('category')->orderBy('name')->get();
         if ($selectedCategory) {
             $rows = $centreId
                 ? $reports->report($request->user(), $period['data_start'], $period['data_end'], $project->id, $centreId, null, $selectedCategory)
                 : $reports->consolidatedReport($request->user(), $period['data_start'], $period['data_end'], $project->id, null, $selectedCategory);
+
+            $assignments = $scope->assignments($request->user())
+                ->whereIn('indicator_definition_id', $indicators->modelKeys())
+                ->when($centreId, fn (Builder $query): Builder => $query->where('centre_id', $centreId))
+                ->get();
+            $assignmentsById = $assignments->keyBy('id');
+            $targetsByIndicator = IndicatorTarget::query()
+                ->whereIn('indicator_assignment_id', $assignments->modelKeys())
+                ->where('active', true)
+                ->whereDate('period', '<=', $period['data_end'])
+                ->whereDate('period_end', '>=', $period['data_start'])
+                ->get()
+                ->groupBy(fn (IndicatorTarget $target): int => $assignmentsById->get($target->indicator_assignment_id)->indicator_definition_id);
+            $targetSummaries = $indicators->mapWithKeys(fn (IndicatorDefinition $indicator): array => [
+                $indicator->id => $reports->summarizeTargets($targetsByIndicator->get($indicator->id, collect()), $indicator),
+            ]);
         }
 
         return view('projects.show', [
@@ -115,8 +135,9 @@ class PortalController extends Controller
             'availableCategories' => $availableCategories,
             'firstIndicatorSection' => collect($sectionCategories)
                 ->search(fn (string $category): bool => $availableCategories->contains($category)) ?: null,
-            'indicators' => $indicatorQuery->orderBy('category')->orderBy('name')->get(),
+            'indicators' => $indicators,
             'rows' => $rows,
+            'targetSummaries' => $targetSummaries,
             'evidence' => $evidence,
             'completeness' => $completeness->summary($request->user(), $period['data_start'], $period['data_end'], $project->id, $centreId),
         ]);

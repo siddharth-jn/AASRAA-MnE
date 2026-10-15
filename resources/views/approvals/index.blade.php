@@ -73,7 +73,7 @@
                         <label for="comment-{{ $entry->id }}">Review comment</label>
                         <input id="comment-{{ $entry->id }}" name="comment" class="mt-1 w-full" placeholder="Required when returning or rejecting">
                         @if($entry->assignment->indicator->evidence_review_required)
-                            <label class="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" name="evidence_reviewed" value="1"> I reviewed the supporting evidence</label>
+                            <label class="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" name="evidence_reviewed" value="1"> I confirm that I reviewed all supporting evidence</label>
                         @endif
                     </div>
                     <div class="flex flex-wrap gap-2">

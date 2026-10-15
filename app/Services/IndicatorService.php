@@ -44,8 +44,15 @@ class IndicatorService
         if (in_array($dataType, ['single_select', 'multi_select', 'status'], true) && empty($data['options'])) {
             $errors['options'] = 'Add at least one accepted option for this input type.';
         }
+        if ($data['evidence_review_required'] ?? false) {
+            $data['evidence_required'] = true;
+            $data['approval_required'] = true;
+        }
         if (($data['evidence_required'] ?? false) && (int) ($data['min_files'] ?? 0) < 1) {
             $data['min_files'] = 1;
+        }
+        if (! ($data['evidence_required'] ?? false)) {
+            $data['evidence_review_required'] = false;
         }
         if ((int) ($data['min_files'] ?? 0) > (int) ($data['max_files'] ?? 0)) {
             $errors['min_files'] = 'The minimum file count cannot exceed the maximum file count.';

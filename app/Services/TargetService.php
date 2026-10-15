@@ -9,6 +9,27 @@ use Illuminate\Validation\ValidationException;
 
 class TargetService
 {
+    /** @param array<string, mixed> $data */
+    public function save(array $data): IndicatorTarget
+    {
+        $period = CarbonImmutable::parse($data['period'])->startOfDay();
+        [$periodStart] = $this->boundaries($period, (string) $data['period_type']);
+        $target = IndicatorTarget::query()
+            ->where('indicator_assignment_id', $data['indicator_assignment_id'])
+            ->whereDate('period', $periodStart)
+            ->where('period_type', $data['period_type'])
+            ->first();
+        $prepared = $this->prepareAndValidate($data, $target);
+
+        if ($target) {
+            $target->update($prepared);
+
+            return $target->fresh();
+        }
+
+        return IndicatorTarget::create($prepared);
+    }
+
     /** @param array<string, mixed> $data
      * @return array<string, mixed>
      */

@@ -53,12 +53,21 @@ class IndicatorConfigurationTest extends TestCase
             'min_files' => 0,
             'max_files' => 5,
         ]);
+        $evidence = app(IndicatorService::class)->prepareAndValidate([
+            'data_type' => 'integer',
+            'evidence_required' => true,
+            'evidence_review_required' => true,
+            'min_files' => 0,
+            'max_files' => 5,
+        ]);
 
         $this->assertSame(0, $percentage['min_value']);
         $this->assertSame(100, $percentage['max_value']);
         $this->assertSame('RATIO', $ratio['time_aggregation']);
         $this->assertSame('RATIO', $ratio['centre_aggregation']);
         $this->assertSame('Numerator', $ratio['numerator_label']);
+        $this->assertSame(1, $evidence['min_files']);
+        $this->assertTrue($evidence['approval_required']);
     }
 
     public function test_select_indicator_requires_accepted_options(): void
@@ -137,6 +146,13 @@ class IndicatorConfigurationTest extends TestCase
     {
         $assignment = $this->createAssignment();
         $admin = User::factory()->create(['role' => 'ADMIN', 'active' => true]);
+        $secondCentre = Centre::create([
+            'code' => 'C2',
+            'name' => 'Second centre',
+            'type' => 'Education Centre',
+            'region' => 'Dehradun',
+        ]);
+        $assignment->indicator->project->centres()->attach($secondCentre);
 
         $this->actingAs($admin)
             ->get(ProjectResource::getUrl('edit', ['record' => $assignment->indicator->project]))
@@ -170,11 +186,17 @@ class IndicatorConfigurationTest extends TestCase
                 'data_type' => 'integer',
                 'value_required' => true,
                 'min_value' => 0,
-                'centres' => [$assignment->centre_id],
+                'centres' => [$assignment->centre_id, $secondCentre->id],
+                'target_centre_ids' => [$assignment->centre_id, $secondCentre->id],
                 'time_aggregation' => 'SUM',
                 'centre_aggregation' => 'SUM',
                 'target_tracking' => true,
                 'direction' => 'higher',
+                'set_targets_now' => true,
+                'target_period_type' => 'monthly',
+                'target_period' => '2026-09-15',
+                'same_target_all_centres' => true,
+                'shared_target' => ['value' => 25],
                 'evidence_required' => false,
                 'evidence_review_required' => false,
                 'max_file_kb' => 5120,
@@ -191,28 +213,74 @@ class IndicatorConfigurationTest extends TestCase
             'name' => 'Sessions delivered by centre',
         ]);
 
+        $this->assertSame(2, $assignment->indicator->fresh()->centres()->count());
+        $this->assertDatabaseCount('indicator_targets', 2);
+        $this->assertSame(
+            [25.0, 25.0],
+            IndicatorTarget::query()->orderBy('indicator_assignment_id')->get()->map(fn (IndicatorTarget $target): float => (float) $target->value)->all(),
+        );
+
         Livewire::actingAs($admin)
             ->test(IndicatorsRelationManager::class, [
                 'ownerRecord' => $assignment->indicator->project,
                 'pageClass' => EditProject::class,
             ])
-            ->assertTableActionVisible('setTarget', $assignment->indicator)
-            ->callTableAction('setTarget', $assignment->indicator, [
-                'indicator_assignment_id' => $assignment->id,
-                'period_type' => 'monthly',
-                'period' => '2026-09-15',
-                'target_type' => 'numeric',
-                'value' => 25,
+            ->callTableAction('edit', $assignment->indicator, [
+                'code' => $assignment->indicator->code,
+                'name' => 'Sessions delivered by centre',
+                'description' => $assignment->indicator->description,
+                'category' => $assignment->indicator->category,
+                'unit' => $assignment->indicator->unit,
+                'frequency' => 'monthly',
+                'effective_date' => '2026-04',
+                'data_type' => 'integer',
+                'value_required' => true,
+                'min_value' => 0,
+                'centres' => [$assignment->centre_id, $secondCentre->id],
+                'target_centre_ids' => [$assignment->centre_id, $secondCentre->id],
+                'time_aggregation' => 'SUM',
+                'centre_aggregation' => 'SUM',
+                'target_tracking' => true,
+                'direction' => 'higher',
+                'set_targets_now' => true,
+                'target_period_type' => 'monthly',
+                'target_period' => '2026-11-15',
+                'same_target_all_centres' => false,
+                'centre_targets' => [
+                    $assignment->centre_id => ['value' => 10],
+                    $secondCentre->id => ['value' => 20],
+                ],
+                'evidence_required' => false,
+                'evidence_review_required' => false,
+                'max_file_kb' => 5120,
+                'min_files' => 0,
+                'max_files' => 5,
+                'approval_required' => true,
                 'active' => true,
             ])
             ->assertHasNoTableActionErrors();
 
-        $this->assertDatabaseHas('indicator_targets', [
-            'indicator_assignment_id' => $assignment->id,
-            'period' => '2026-09-01 00:00:00',
-            'period_type' => 'monthly',
-            'value' => 25,
-        ]);
+        $this->assertSame(
+            [10.0, 20.0],
+            IndicatorTarget::query()
+                ->whereDate('period', '2026-11-01')
+                ->orderBy('indicator_assignment_id')
+                ->get()
+                ->map(fn (IndicatorTarget $target): float => (float) $target->value)
+                ->all(),
+        );
+
+        $this->actingAs($admin)
+            ->get(route('projects.show', [
+                $assignment->indicator->project,
+                'section' => 'activities',
+                'centre' => $assignment->centre_id,
+                'period_type' => 'monthly',
+                'anchor' => '2026-09',
+            ]))
+            ->assertOk()
+            ->assertSee('No approved result')
+            ->assertSee('Target: 25 sessions');
     }
 
     public function test_target_changes_are_written_to_the_audit_log(): void

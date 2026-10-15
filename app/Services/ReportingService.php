@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\IndicatorDefinition;
 use App\Models\IndicatorEntry;
 use App\Models\IndicatorTarget;
 use App\Models\User;
@@ -137,6 +138,30 @@ class ReportingService
             })
             ->sortBy(fn (array $row): string => $row['indicator']->category.$row['indicator']->name)
             ->values();
+    }
+
+    /**
+     * @param  Collection<int, IndicatorTarget>  $targets
+     * @return array{type: string|null, value: float|null, minimum: float|null, maximum: float|null, status: string|null, display: string}
+     */
+    public function summarizeTargets(Collection $targets, IndicatorDefinition $indicator): array
+    {
+        if ($targets->isEmpty()) {
+            return $this->aggregateTargets(collect(), $indicator->time_aggregation);
+        }
+
+        $assignmentTargets = $targets
+            ->groupBy('indicator_assignment_id')
+            ->map(fn (Collection $group): array => [
+                'target_data' => $this->aggregateTargets($group, $indicator->time_aggregation),
+            ])
+            ->values();
+
+        if ($assignmentTargets->count() === 1) {
+            return $assignmentTargets->first()['target_data'];
+        }
+
+        return $this->consolidateTargets($assignmentTargets, $indicator->centre_aggregation);
     }
 
     /** @param Collection<int, IndicatorTarget> $targets

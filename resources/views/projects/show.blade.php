@@ -67,6 +67,7 @@
             <div class="mt-4 divide-y divide-slate-100">
                 @forelse($indicators as $indicator)
                     @php($row = $rows->first(fn ($candidate) => $candidate['indicator']->id === $indicator->id))
+                    @php($targetSummary = $targetSummaries->get($indicator->id, ['value' => null, 'display' => 'Not set']))
                     <a href="{{ route('kpis.show', [$project, $indicator, 'centre' => request('centre')]) }}" class="flex items-center justify-between gap-3 rounded-lg px-2 py-4 hover:bg-slate-50">
                         <div><p class="text-sm font-semibold text-slate-800">{{ $indicator->name }}</p><p class="text-xs text-slate-500">{{ $indicator->unit }} · {{ $indicator->time_aggregation }} over time · {{ $indicator->assignments_count }} centres</p></div>
                         <div class="text-right">
@@ -75,6 +76,7 @@
                                 <p class="text-xs text-slate-500">Target: {{ $row['target_display'] }}{{ $row['target'] !== null ? ' '.$indicator->unit : '' }} · {{ $row['performance_status'] }}</p>
                             @else
                                 <p class="text-sm font-semibold text-slate-500">No approved result</p>
+                                <p class="text-xs text-slate-500">Target: {{ $targetSummary['display'] }}{{ $targetSummary['value'] !== null ? ' '.$indicator->unit : '' }}</p>
                             @endif
                         </div>
                     </a>
