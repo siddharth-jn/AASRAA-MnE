@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\IndicatorDefinitions\Schemas;
 
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
@@ -17,7 +18,7 @@ use Illuminate\Support\Str;
 
 class IndicatorDefinitionForm
 {
-    public static function configure(Schema $schema): Schema
+    public static function configure(Schema $schema, int|string|null $projectId = null): Schema
     {
         $dataTypes = collect(config('impact.data_types'))
             ->mapWithKeys(fn (string $type): array => [$type => Str::headline($type)])
@@ -28,10 +29,13 @@ class IndicatorDefinitionForm
                 Step::make('Basic details')
                     ->description('Name and classify the indicator.')
                     ->schema([
-                        Select::make('project_id')
-                            ->relationship('project', 'name')
-                            ->live()
-                            ->required(),
+                        $projectId === null
+                            ? Select::make('project_id')
+                                ->relationship('project', 'name')
+                                ->live()
+                                ->required()
+                            : Hidden::make('project_id')
+                                ->default($projectId),
                         TextInput::make('code')
                             ->helperText('A permanent unique code, for example SS-LIT-SESSIONS.')
                             ->required()
@@ -123,7 +127,7 @@ class IndicatorDefinitionForm
                                 'centres',
                                 'name',
                                 modifyQueryUsing: fn (Builder $query, Get $get): Builder => $query
-                                    ->when($get('project_id'), fn (Builder $centreQuery, int|string $projectId): Builder => $centreQuery->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($projectId)))
+                                    ->when($projectId ?? $get('project_id'), fn (Builder $centreQuery, int|string $selectedProjectId): Builder => $centreQuery->whereHas('projects', fn (Builder $projectQuery): Builder => $projectQuery->whereKey($selectedProjectId)))
                                     ->orderBy('name'),
                             )
                             ->multiple()

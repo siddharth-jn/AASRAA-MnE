@@ -274,6 +274,51 @@ class WorkflowReportingTest extends TestCase
             ->assertDontSee('Reporting locations');
     }
 
+    public function test_project_centre_selection_shows_only_indicators_assigned_to_that_centre(): void
+    {
+        [$assignment, , $reviewer] = $this->configuredAssignment();
+        $project = $assignment->indicator->project;
+        $secondCentre = Centre::create([
+            'code' => 'C2',
+            'name' => 'Second project centre',
+            'type' => 'Education Centre',
+            'region' => 'Dehradun',
+        ]);
+        $project->centres()->attach($secondCentre);
+        $reviewer->centres()->attach($secondCentre);
+        $secondIndicator = IndicatorDefinition::create([
+            'project_id' => $project->id,
+            'code' => 'SECOND-ACTIVITY',
+            'name' => 'Second centre only activity',
+            'description' => 'This indicator is assigned only to the second centre.',
+            'category' => 'Activity',
+            'unit' => 'sessions',
+            'data_type' => 'integer',
+            'frequency' => 'monthly',
+            'time_aggregation' => 'SUM',
+            'centre_aggregation' => 'SUM',
+            'active' => true,
+        ]);
+        IndicatorAssignment::create([
+            'indicator_definition_id' => $secondIndicator->id,
+            'centre_id' => $secondCentre->id,
+            'required' => true,
+        ]);
+
+        $this->actingAs($reviewer)
+            ->get(route('projects.show', [$project, 'section' => 'activities', 'centre' => $assignment->centre_id]))
+            ->assertOk()
+            ->assertSee('Showing indicators assigned to '.$assignment->centre->name.'.')
+            ->assertSee($assignment->indicator->name)
+            ->assertDontSee($secondIndicator->name)
+            ->assertSee('centre='.$assignment->centre_id, false);
+
+        $this->actingAs($reviewer)
+            ->get(route('projects.show', [$project, 'section' => 'overview']))
+            ->assertOk()
+            ->assertSee('View indicators for this centre');
+    }
+
     public function test_portal_header_uses_a_bell_and_remains_sticky(): void
     {
         [, , $reviewer] = $this->configuredAssignment();

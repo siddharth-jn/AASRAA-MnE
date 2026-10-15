@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\Projects\Pages\EditProject;
+use App\Filament\Resources\Projects\ProjectResource;
+use App\Filament\Resources\Projects\RelationManagers\IndicatorsRelationManager;
 use App\Models\AuditLog;
 use App\Models\Centre;
 use App\Models\IndicatorAssignment;
@@ -15,6 +18,7 @@ use App\Services\TargetService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class IndicatorConfigurationTest extends TestCase
@@ -120,6 +124,64 @@ class IndicatorConfigurationTest extends TestCase
         $this->actingAs($admin)->get('/admin/indicator-targets')->assertOk();
         $this->actingAs($admin)->get('/admin/indicator-targets/create')->assertOk();
         $this->actingAs($admin)->get('/admin')->assertOk()->assertSee('Back to main dashboard');
+    }
+
+    public function test_administrator_can_manage_project_indicators_from_the_project_edit_page(): void
+    {
+        $assignment = $this->createAssignment();
+        $admin = User::factory()->create(['role' => 'ADMIN', 'active' => true]);
+
+        $this->actingAs($admin)
+            ->get(ProjectResource::getUrl('edit', ['record' => $assignment->indicator->project]))
+            ->assertOk();
+
+        $this->actingAs($admin)
+            ->get('/admin')
+            ->assertOk()
+            ->assertDontSee('Indicator definitions');
+
+        $this->actingAs($admin)
+            ->get(route('projects.show', $assignment->indicator->project))
+            ->assertOk()
+            ->assertSee('Edit project &amp; indicators', false);
+
+        Livewire::actingAs($admin)
+            ->test(IndicatorsRelationManager::class, [
+                'ownerRecord' => $assignment->indicator->project,
+                'pageClass' => EditProject::class,
+            ])
+            ->assertCanSeeTableRecords([$assignment->indicator])
+            ->assertSee('Add indicator')
+            ->callTableAction('edit', $assignment->indicator, [
+                'code' => $assignment->indicator->code,
+                'name' => 'Sessions delivered by centre',
+                'description' => $assignment->indicator->description,
+                'category' => $assignment->indicator->category,
+                'unit' => $assignment->indicator->unit,
+                'frequency' => 'monthly',
+                'effective_date' => '2026-04-01',
+                'data_type' => 'integer',
+                'value_required' => true,
+                'min_value' => 0,
+                'centres' => [$assignment->centre_id],
+                'time_aggregation' => 'SUM',
+                'centre_aggregation' => 'SUM',
+                'target_tracking' => false,
+                'evidence_required' => false,
+                'evidence_review_required' => false,
+                'max_file_kb' => 5120,
+                'min_files' => 0,
+                'max_files' => 5,
+                'approval_required' => true,
+                'active' => true,
+            ])
+            ->assertHasNoTableActionErrors();
+
+        $this->assertDatabaseHas('indicator_definitions', [
+            'id' => $assignment->indicator_definition_id,
+            'project_id' => $assignment->indicator->project_id,
+            'name' => 'Sessions delivered by centre',
+        ]);
     }
 
     public function test_target_changes_are_written_to_the_audit_log(): void

@@ -15,7 +15,9 @@ class ProjectForm
         return $schema
             ->components([
                 Select::make('programme_id')
+                    ->label('Programme')
                     ->relationship('programme', 'name')
+                    ->helperText('Programmes group related projects. Indicators and centre reporting are configured for each project.')
                     ->required(),
                 TextInput::make('code')
                     ->required()

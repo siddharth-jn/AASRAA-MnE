@@ -61,10 +61,21 @@ class PortalController extends Controller
             Gate::authorize('submit');
         }
         $selectedCategory = $sectionCategories[$section] ?? null;
-        $availableCategories = $project->indicators()->where('active', true)->distinct()->pluck('category');
-        $indicatorQuery = $project->indicators()->where('active', true)->withCount('assignments');
+        $visibleCentreIds = $project->centres->modelKeys();
+        $availableCategories = $project->indicators()
+            ->where('active', true)
+            ->whereHas('assignments', fn (Builder $query): Builder => $query->whereIn('centre_id', $visibleCentreIds))
+            ->distinct()
+            ->pluck('category');
+        $indicatorQuery = $project->indicators()
+            ->where('active', true)
+            ->whereHas('assignments', fn (Builder $query): Builder => $query->whereIn('centre_id', $visibleCentreIds))
+            ->withCount(['assignments' => fn (Builder $query): Builder => $query->whereIn('centre_id', $visibleCentreIds)]);
         if ($selectedCategory) {
             $indicatorQuery->where('category', $selectedCategory);
+        }
+        if ($centreId) {
+            $indicatorQuery->whereHas('assignments', fn (Builder $query): Builder => $query->where('centre_id', $centreId));
         }
         if ($request->filled('q')) {
             $search = '%'.$request->string('q')->trim()->value().'%';
@@ -102,6 +113,8 @@ class PortalController extends Controller
             'section' => $section,
             'sectionCategories' => $sectionCategories,
             'availableCategories' => $availableCategories,
+            'firstIndicatorSection' => collect($sectionCategories)
+                ->search(fn (string $category): bool => $availableCategories->contains($category)) ?: null,
             'indicators' => $indicatorQuery->orderBy('category')->orderBy('name')->get(),
             'rows' => $rows,
             'evidence' => $evidence,
