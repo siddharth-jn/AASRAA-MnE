@@ -77,7 +77,7 @@ class IndicatorDefinitionForm
                             ->live()
                             ->required(),
                         Toggle::make('value_required')
-                            ->label('Reported value is required')
+                            ->label('Require a value when reported')
                             ->default(true),
                         TextInput::make('min_value')
                             ->label('Minimum numeric value')
@@ -155,7 +155,8 @@ class IndicatorDefinitionForm
                             ->options(array_combine(config('impact.aggregations'), config('impact.aggregations')))
                             ->required(),
                         Toggle::make('target_tracking')
-                            ->label('Track performance against targets')
+                            ->label('Track targets for this indicator')
+                            ->helperText('After saving, use Set target beside the indicator to enter a centre, reporting period, and target value.')
                             ->live()
                             ->default(true),
                         Select::make('direction')

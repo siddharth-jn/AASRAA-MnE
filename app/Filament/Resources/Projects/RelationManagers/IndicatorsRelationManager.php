@@ -3,7 +3,12 @@
 namespace App\Filament\Resources\Projects\RelationManagers;
 
 use App\Filament\Resources\IndicatorDefinitions\Schemas\IndicatorDefinitionForm;
+use App\Filament\Resources\IndicatorTargets\Schemas\IndicatorTargetForm;
+use App\Models\IndicatorDefinition;
+use App\Models\IndicatorTarget;
 use App\Services\IndicatorService;
+use App\Services\TargetService;
+use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -45,8 +50,12 @@ class IndicatorsRelationManager extends RelationManager
                     ->label('Centres')
                     ->counts('centres')
                     ->sortable(),
-                IconColumn::make('target_tracking')
+                TextColumn::make('targets_count')
                     ->label('Targets')
+                    ->counts('targets')
+                    ->sortable(),
+                IconColumn::make('target_tracking')
+                    ->label('Tracking')
                     ->boolean(),
                 IconColumn::make('active')
                     ->boolean(),
@@ -61,6 +70,18 @@ class IndicatorsRelationManager extends RelationManager
             ->recordActions([
                 EditAction::make()
                     ->mutateDataUsing(fn (array $data): array => $this->prepareIndicatorData($data)),
+                Action::make('setTarget')
+                    ->label('Set target')
+                    ->icon('heroicon-o-chart-bar-square')
+                    ->modalHeading(fn (IndicatorDefinition $record): string => 'Set target · '.$record->name)
+                    ->modalSubmitActionLabel('Save target')
+                    ->schema(fn (IndicatorDefinition $record): array => IndicatorTargetForm::components($record->id))
+                    ->action(function (IndicatorDefinition $record, array $data): void {
+                        abort_unless($record->assignments()->whereKey($data['indicator_assignment_id'])->exists(), 403);
+
+                        IndicatorTarget::create(app(TargetService::class)->prepareAndValidate($data));
+                    })
+                    ->visible(fn (IndicatorDefinition $record): bool => $record->target_tracking && $record->assignments()->exists()),
             ]);
     }
 

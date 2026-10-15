@@ -7,6 +7,7 @@ use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class IndicatorDefinition extends ImpactModel
 {
@@ -46,7 +47,7 @@ class IndicatorDefinition extends ImpactModel
         return $this->hasMany(IndicatorDefinitionVersion::class);
     }
 
-    public function targets(): HasMany
+    public function targets(): HasManyThrough
     {
         return $this->hasManyThrough(IndicatorTarget::class, IndicatorAssignment::class);
     }

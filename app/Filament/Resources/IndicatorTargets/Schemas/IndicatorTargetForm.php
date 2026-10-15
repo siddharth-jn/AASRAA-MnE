@@ -11,23 +11,35 @@ use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 
 class IndicatorTargetForm
 {
-    public static function configure(Schema $schema): Schema
+    public static function configure(Schema $schema, ?int $indicatorId = null): Schema
     {
-        return $schema->components([
+        return $schema->components(self::components($indicatorId));
+    }
+
+    /** @return array<int, mixed> */
+    public static function components(?int $indicatorId = null): array
+    {
+        return [
             Section::make('Target scope')
-                ->description('Set a target for one configured indicator and centre.')
+                ->description($indicatorId === null
+                    ? 'Set a target for one configured indicator and centre.'
+                    : 'Set a target for one centre assigned to this indicator.')
                 ->schema([
                     Select::make('indicator_assignment_id')
-                        ->label('Indicator and centre')
+                        ->label($indicatorId === null ? 'Indicator and centre' : 'Centre')
                         ->options(fn (): array => IndicatorAssignment::query()
                             ->with(['indicator.project', 'centre'])
-                            ->whereHas('indicator', fn ($query) => $query->where('target_tracking', true))
+                            ->whereHas('indicator', fn (Builder $query): Builder => $query->where('target_tracking', true))
+                            ->when($indicatorId, fn (Builder $query, int $selectedIndicatorId): Builder => $query->where('indicator_definition_id', $selectedIndicatorId))
                             ->get()
                             ->sortBy(fn (IndicatorAssignment $assignment): string => $assignment->display_name)
-                            ->mapWithKeys(fn (IndicatorAssignment $assignment): array => [$assignment->id => $assignment->display_name])
+                            ->mapWithKeys(fn (IndicatorAssignment $assignment): array => [
+                                $assignment->id => $indicatorId === null ? $assignment->display_name : $assignment->centre->name,
+                            ])
                             ->all())
                         ->searchable()
                         ->preload()
@@ -77,6 +89,6 @@ class IndicatorTargetForm
                         ->default(true),
                 ])
                 ->columns(2),
-        ]);
+        ];
     }
 }

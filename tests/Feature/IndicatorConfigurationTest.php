@@ -125,7 +125,9 @@ class IndicatorConfigurationTest extends TestCase
             ->assertOk()
             ->assertSee('Reporting starts from')
             ->assertSee('type="month"', false)
-            ->assertDontSee('Effective date');
+            ->assertDontSee('Effective date')
+            ->assertSee('Require a value when reported')
+            ->assertDontSee('Reported value is required');
         $this->actingAs($admin)->get('/admin/indicator-targets')->assertOk();
         $this->actingAs($admin)->get('/admin/indicator-targets/create')->assertOk();
         $this->actingAs($admin)->get('/admin')->assertOk()->assertSee('Back to main dashboard');
@@ -171,7 +173,8 @@ class IndicatorConfigurationTest extends TestCase
                 'centres' => [$assignment->centre_id],
                 'time_aggregation' => 'SUM',
                 'centre_aggregation' => 'SUM',
-                'target_tracking' => false,
+                'target_tracking' => true,
+                'direction' => 'higher',
                 'evidence_required' => false,
                 'evidence_review_required' => false,
                 'max_file_kb' => 5120,
@@ -186,6 +189,29 @@ class IndicatorConfigurationTest extends TestCase
             'id' => $assignment->indicator_definition_id,
             'project_id' => $assignment->indicator->project_id,
             'name' => 'Sessions delivered by centre',
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test(IndicatorsRelationManager::class, [
+                'ownerRecord' => $assignment->indicator->project,
+                'pageClass' => EditProject::class,
+            ])
+            ->assertTableActionVisible('setTarget', $assignment->indicator)
+            ->callTableAction('setTarget', $assignment->indicator, [
+                'indicator_assignment_id' => $assignment->id,
+                'period_type' => 'monthly',
+                'period' => '2026-09-15',
+                'target_type' => 'numeric',
+                'value' => 25,
+                'active' => true,
+            ])
+            ->assertHasNoTableActionErrors();
+
+        $this->assertDatabaseHas('indicator_targets', [
+            'indicator_assignment_id' => $assignment->id,
+            'period' => '2026-09-01 00:00:00',
+            'period_type' => 'monthly',
+            'value' => 25,
         ]);
     }
 
