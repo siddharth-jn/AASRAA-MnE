@@ -27,7 +27,6 @@ class AdminPanelProvider extends PanelProvider
             ->default()
             ->id('admin')
             ->path('admin')
-            ->login()
             ->brandName('AASRAA Monitoring & Evaluation')
             ->brandLogo(asset('images/ame-brand.svg'))
             ->brandLogoHeight('2.75rem')

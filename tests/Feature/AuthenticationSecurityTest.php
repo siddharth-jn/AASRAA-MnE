@@ -18,6 +18,26 @@ class AuthenticationSecurityTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_administration_uses_the_main_login_and_remains_admin_only(): void
+    {
+        $coordinator = User::factory()->create([
+            'email' => 'coordinator@example.com',
+            'password' => 'Coordinator-pass1',
+            'role' => 'CENTRE COORDINATOR',
+            'active' => true,
+        ]);
+
+        $this->get('/admin')->assertRedirect(route('login'));
+        $this->get('/admin/login')->assertRedirect('/login');
+
+        $this->post(route('login.store'), [
+            'email' => $coordinator->email,
+            'password' => 'Coordinator-pass1',
+        ])->assertRedirect(route('dashboard'));
+
+        $this->get('/admin')->assertForbidden();
+    }
+
     public function test_user_can_request_and_complete_a_password_reset(): void
     {
         Notification::fake();

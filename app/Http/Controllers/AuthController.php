@@ -21,6 +21,10 @@ class AuthController extends Controller
             return back()->withErrors(['email' => 'The provided credentials do not match our records.'])->onlyInput('email');
         }
         $request->session()->regenerate();
+        $intendedPath = parse_url((string) $request->session()->get('url.intended'), PHP_URL_PATH);
+        if ($request->user()->role !== 'ADMIN' && is_string($intendedPath) && str_starts_with($intendedPath, '/admin')) {
+            $request->session()->forget('url.intended');
+        }
 
         return redirect()->intended(route('dashboard'));
     }
