@@ -62,7 +62,8 @@ class IndicatorDefinitionsTable
                 IconColumn::make('active')
                     ->boolean(),
                 TextColumn::make('effective_date')
-                    ->date()
+                    ->label('Reporting starts')
+                    ->date('M Y')
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('updated_at')

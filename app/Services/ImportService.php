@@ -218,6 +218,9 @@ class ImportService
         } catch (Throwable) {
             return ['invalid', null, 'The reporting period is not a valid date.'];
         }
+        if (! $indicator->isEffectiveForPeriod($period)) {
+            return ['invalid', null, 'Reporting for this indicator starts in '.$indicator->effective_date->format('F Y').'.'];
+        }
         $key = $assignment->id.'-'.$period->toDateString();
         if (isset($seen[$key])) {
             return ['duplicate', ['assignment_id' => $assignment->id, 'period' => $period->toDateString()], 'A reporting record already exists for this indicator, centre, and period.'];

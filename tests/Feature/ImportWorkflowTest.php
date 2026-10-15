@@ -100,6 +100,26 @@ class ImportWorkflowTest extends TestCase
         $this->assertSame('duplicate', $batch->rows->first()->status);
     }
 
+    public function test_import_rejects_reporting_periods_before_the_indicator_start_month(): void
+    {
+        [$user, $project, $assignment] = $this->configuredProject();
+        $assignment->indicator->update(['effective_date' => '2026-09-01']);
+        Storage::fake('local');
+        $batch = app(ImportService::class)->upload($user, $project, UploadedFile::fake()->createWithContent('history.csv', "centre,indicator,period,value\nC1,TEST-1,2026-08-01,18\n"));
+        $batch = app(ImportService::class)->validateRows($batch, [
+            'centre' => 'centre',
+            'indicator' => 'indicator',
+            'period' => 'period',
+            'value' => 'value',
+            'numerator' => null,
+            'denominator' => null,
+            'notes' => null,
+        ]);
+
+        $this->assertSame('invalid', $batch->rows->first()->status);
+        $this->assertSame('Reporting for this indicator starts in September 2026.', $batch->rows->first()->error);
+    }
+
     public function test_authorized_user_can_open_import_history_and_download_template(): void
     {
         [$user, $project] = $this->configuredProject();

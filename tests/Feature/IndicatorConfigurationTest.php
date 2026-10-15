@@ -120,7 +120,12 @@ class IndicatorConfigurationTest extends TestCase
         $admin = User::factory()->create(['role' => 'ADMIN', 'active' => true]);
 
         $this->actingAs($admin)->get('/admin/indicator-definitions')->assertOk();
-        $this->actingAs($admin)->get('/admin/indicator-definitions/create')->assertOk();
+        $this->actingAs($admin)
+            ->get('/admin/indicator-definitions/create')
+            ->assertOk()
+            ->assertSee('Reporting starts from')
+            ->assertSee('type="month"', false)
+            ->assertDontSee('Effective date');
         $this->actingAs($admin)->get('/admin/indicator-targets')->assertOk();
         $this->actingAs($admin)->get('/admin/indicator-targets/create')->assertOk();
         $this->actingAs($admin)->get('/admin')->assertOk()->assertSee('Back to main dashboard');
@@ -159,7 +164,7 @@ class IndicatorConfigurationTest extends TestCase
                 'category' => $assignment->indicator->category,
                 'unit' => $assignment->indicator->unit,
                 'frequency' => 'monthly',
-                'effective_date' => '2026-04-01',
+                'effective_date' => '2026-04',
                 'data_type' => 'integer',
                 'value_required' => true,
                 'min_value' => 0,

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -47,6 +49,15 @@ class IndicatorDefinition extends ImpactModel
     public function targets(): HasMany
     {
         return $this->hasManyThrough(IndicatorTarget::class, IndicatorAssignment::class);
+    }
+
+    public function isEffectiveForPeriod(CarbonInterface|string $period): bool
+    {
+        $reportingMonth = $period instanceof CarbonInterface
+            ? CarbonImmutable::instance($period)->startOfMonth()
+            : CarbonImmutable::parse($period)->startOfMonth();
+
+        return $reportingMonth->gte(CarbonImmutable::parse($this->effective_date)->startOfMonth());
     }
 
     protected static function booted(): void

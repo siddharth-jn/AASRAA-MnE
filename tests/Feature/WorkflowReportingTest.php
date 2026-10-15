@@ -256,6 +256,49 @@ class WorkflowReportingTest extends TestCase
             ->assertDontSee($restrictedCentre->name);
     }
 
+    public function test_data_entry_is_unavailable_before_an_indicator_reporting_start_month(): void
+    {
+        [$assignment, $submitter] = $this->configuredAssignment();
+        $assignment->indicator->update(['effective_date' => '2026-10-01']);
+
+        $this->actingAs($submitter)
+            ->get(route('entries.index', [
+                'project' => $assignment->indicator->project_id,
+                'centre' => $assignment->centre_id,
+                'period' => '2026-09',
+            ]))
+            ->assertOk()
+            ->assertDontSee($assignment->indicator->name)
+            ->assertSee('of 0 required');
+
+        $this->actingAs($submitter)
+            ->get(route('entries.edit', ['assignment' => $assignment, 'period' => '2026-09']))
+            ->assertStatus(422);
+
+        $this->actingAs($submitter)
+            ->post(route('entries.store', $assignment), [
+                'period' => '2026-09-01',
+                'value_state' => 'reported',
+                'numeric_value' => 10,
+                'action' => 'save',
+            ])
+            ->assertSessionHasErrors('period');
+
+        $this->assertDatabaseMissing('indicator_entries', [
+            'indicator_assignment_id' => $assignment->id,
+            'period' => '2026-09-01',
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('entries.index', [
+                'project' => $assignment->indicator->project_id,
+                'centre' => $assignment->centre_id,
+                'period' => '2026-10',
+            ]))
+            ->assertOk()
+            ->assertSee($assignment->indicator->name);
+    }
+
     public function test_project_tabs_show_only_the_selected_section_content(): void
     {
         [$assignment, , $reviewer] = $this->configuredAssignment();

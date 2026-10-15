@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\IndicatorDefinitions\Schemas;
 
+use Carbon\CarbonImmutable;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
@@ -57,8 +58,14 @@ class IndicatorDefinitionForm
                             ->options(config('impact.frequencies'))
                             ->required()
                             ->default('monthly'),
-                        DatePicker::make('effective_date')
-                            ->default('2026-04-01')
+                        TextInput::make('effective_date')
+                            ->label('Reporting starts from')
+                            ->type('month')
+                            ->default('2026-04')
+                            ->formatStateUsing(fn (mixed $state): ?string => filled($state) ? CarbonImmutable::parse($state)->format('Y-m') : null)
+                            ->dehydrateStateUsing(fn (mixed $state): ?string => filled($state) ? CarbonImmutable::createFromFormat('Y-m', $state)->startOfMonth()->toDateString() : null)
+                            ->rules(['date_format:Y-m'])
+                            ->helperText('The first month for which this indicator can be reported.')
                             ->required(),
                     ])
                     ->columns(2),

@@ -18,17 +18,24 @@ class EntryService
     /** @param array<string, mixed> $data @param array<int, UploadedFile> $files */
     public function save(User $user, IndicatorAssignment $assignment, string $period, array $data, array $files, bool $submit): IndicatorEntry
     {
-        $entry = DB::transaction(function () use ($user, $assignment, $period, $data, $files, $submit): IndicatorEntry {
-            $normalizedPeriod = CarbonImmutable::parse($period)->startOfMonth()->toDateString();
+        $definition = $assignment->loadMissing('indicator')->indicator;
+        $normalizedPeriod = CarbonImmutable::parse($period)->startOfMonth();
+        if (! $definition->isEffectiveForPeriod($normalizedPeriod)) {
+            throw ValidationException::withMessages([
+                'period' => 'Reporting for this indicator starts in '.$definition->effective_date->format('F Y').'.',
+            ]);
+        }
+
+        $entry = DB::transaction(function () use ($user, $assignment, $normalizedPeriod, $definition, $data, $files, $submit): IndicatorEntry {
             $entry = IndicatorEntry::query()
                 ->where('indicator_assignment_id', $assignment->id)
-                ->whereDate('period', $normalizedPeriod)
+                ->whereDate('period', $normalizedPeriod->toDateString())
                 ->lockForUpdate()
                 ->first();
             if (! $entry) {
                 $entry = IndicatorEntry::create([
                     'indicator_assignment_id' => $assignment->id,
-                    'period' => $normalizedPeriod,
+                    'period' => $normalizedPeriod->toDateString(),
                     'status' => 'DRAFT',
                     'is_demo' => false,
                 ]);
@@ -36,7 +43,6 @@ class EntryService
             if ($entry->status === 'SUBMITTED') {
                 throw ValidationException::withMessages(['entry' => 'This record is awaiting review.']);
             }
-            $definition = $assignment->indicator;
             $existingEvidenceCount = $entry->currentRevision?->evidence()->count() ?? 0;
             $minimumEvidenceCount = max(1, $definition->min_files);
             if ($submit && $definition->evidence_required && ($existingEvidenceCount + count($files)) < $minimumEvidenceCount) {

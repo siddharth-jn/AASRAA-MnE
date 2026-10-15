@@ -44,8 +44,9 @@ class EntryController extends Controller
 
         $assignments = $scope->assignments($request->user())
             ->with(['indicator.project', 'centre'])
-            ->whereHas('indicator', function (Builder $query) use ($projectId): void {
-                $query->where('active', true);
+            ->whereHas('indicator', function (Builder $query) use ($periodMonth, $projectId): void {
+                $query->where('active', true)
+                    ->whereDate('effective_date', '<=', $periodMonth->endOfMonth());
                 if ($projectId) {
                     $query->where('project_id', $projectId);
                 }
@@ -75,8 +76,15 @@ class EntryController extends Controller
     public function edit(Request $request, IndicatorAssignment $assignment, ScopeService $scope, TargetService $targets): View
     {
         abort_unless($scope->assignments($request->user())->whereKey($assignment)->exists() && Gate::allows('submit'), 403);
-        $period = $request->input('period', '2026-09').'-01';
+        $request->validate(['period' => ['nullable', 'date_format:Y-m']]);
+        $periodMonth = CarbonImmutable::parse($request->input('period', '2026-09').'-01')->startOfMonth();
         $assignment->load(['indicator.project', 'centre']);
+        abort_unless(
+            $assignment->indicator->isEffectiveForPeriod($periodMonth),
+            422,
+            'Reporting for this indicator starts in '.$assignment->indicator->effective_date->format('F Y').'.',
+        );
+        $period = $periodMonth->toDateString();
         $entry = IndicatorEntry::with(['currentRevision.evidence', 'revisions.user', 'revisions.evidence', 'revisions.actions.user'])->where('indicator_assignment_id', $assignment->id)->whereDate('period', $period)->first();
         $target = $targets->findForPeriod($assignment->id, CarbonImmutable::parse($period));
 
