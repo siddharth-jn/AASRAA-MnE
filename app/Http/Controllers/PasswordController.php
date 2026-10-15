@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Support\PasswordPolicy;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -10,7 +11,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rules\Password as PasswordRule;
 use Illuminate\View\View;
 
 class PasswordController extends Controller
@@ -44,7 +44,7 @@ class PasswordController extends Controller
         $credentials = $request->validate([
             'token' => ['required'],
             'email' => ['required', 'email'],
-            'password' => ['required', 'confirmed', PasswordRule::defaults()],
+            'password' => ['required', 'confirmed', PasswordPolicy::rule()],
         ]);
 
         $status = Password::reset($credentials, function (User $user, string $password): void {
@@ -76,7 +76,7 @@ class PasswordController extends Controller
     {
         $validated = $request->validate([
             'current_password' => ['required', 'current_password'],
-            'password' => ['required', 'confirmed', PasswordRule::defaults()],
+            'password' => ['required', 'confirmed', PasswordPolicy::rule()],
         ]);
 
         $request->user()->forceFill([

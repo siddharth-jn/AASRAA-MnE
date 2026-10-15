@@ -8,6 +8,7 @@ use App\Http\Controllers\KpiController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\PortalController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ReportController;
 use Illuminate\Support\Facades\Route;
 
@@ -49,5 +50,6 @@ Route::middleware('auth')->group(function (): void {
     Route::post('/notifications/{notification}', [NotificationController::class, 'read'])->name('notifications.read');
     Route::get('/profile/password', [PasswordController::class, 'edit'])->name('password.edit');
     Route::patch('/profile/password', [PasswordController::class, 'change'])->name('password.change');
+    Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
 });

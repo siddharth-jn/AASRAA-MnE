@@ -46,6 +46,6 @@ class WorkflowNotification extends Notification
             ->subject($this->title)
             ->greeting("Hello {$notifiable->name},")
             ->line($this->message)
-            ->action('Open AASRA IMPACT', $this->url);
+            ->action('Open AASRAA Monitoring & Evaluation', $this->url);
     }
 }

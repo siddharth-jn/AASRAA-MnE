@@ -139,7 +139,12 @@ class IndicatorConfigurationTest extends TestCase
             ->assertDontSee('Reported value is required');
         $this->actingAs($admin)->get('/admin/indicator-targets')->assertOk();
         $this->actingAs($admin)->get('/admin/indicator-targets/create')->assertOk();
-        $this->actingAs($admin)->get('/admin')->assertOk()->assertSee('Back to main dashboard');
+        $this->actingAs($admin)
+            ->get('/admin')
+            ->assertOk()
+            ->assertSee('AASRAA Monitoring &amp; Evaluation', false)
+            ->assertSee(route('dashboard'), false)
+            ->assertDontSee('Back to main dashboard');
     }
 
     public function test_administrator_can_manage_project_indicators_from_the_project_edit_page(): void
