@@ -1,6 +1,7 @@
 <x-layouts.app heading="Report an achievement">
     @php($definition = $assignment->indicator)
     @php($revision = $entry?->currentRevision)
+    @php($locked = $entry && (in_array($entry->status, \App\Support\WorkflowStatus::pending(), true) || $entry->status === \App\Support\WorkflowStatus::FinalApproved || ($revision?->user_id !== auth()->id() && auth()->user()->role !== 'ADMIN')))
     <div class="mx-auto max-w-3xl">
         <div class="card mb-5 p-6">
             <div class="grid gap-5 sm:grid-cols-2">
@@ -19,7 +20,10 @@
                 </div>
                 <div>
                     <p class="text-xs font-semibold uppercase text-slate-400">Reporting period</p>
-                    <p class="mt-1 font-semibold text-ink">{{ \Carbon\Carbon::parse($period)->format('F Y') }}</p>
+                    <p class="mt-1 font-semibold text-ink">{{ $periodLabel }}</p>
+                    @if($definition->frequency !== 'monthly')
+                        <p class="mt-1 text-xs text-slate-500">This single entry applies to the entire {{ strtolower(config('impact.frequencies.'.$definition->frequency)) }} period.</p>
+                    @endif
                     @if($target)
                         <p class="mt-1 text-sm text-slate-500">
                             Target:
@@ -31,6 +35,8 @@
                                 {{ number_format($target->value, $definition->precision) }} {{ $definition->unit }}
                             @endif
                         </p>
+                    @elseif($definition->target_tracking)
+                        <p class="mt-1 text-sm text-slate-500">No target set for this period. You can still report the result.</p>
                     @endif
                 </div>
             </div>
@@ -40,6 +46,12 @@
             @csrf
             <input type="hidden" name="period" value="{{ $period }}">
             @if(request()->boolean('lock_project'))<input type="hidden" name="lock_project" value="1">@endif
+
+            @if($locked)
+                <div class="mb-5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">This entry is read-only for your account. Submitted and final-approved values cannot be edited directly, and only the original submitter may correct a returned entry.</div>
+            @endif
+
+            <fieldset @disabled($locked)>
 
             <div class="mb-6">
                 <label for="value_state">Reporting state</label>
@@ -118,9 +130,9 @@
 
             <div class="mt-5">
                 <label for="evidence">Supporting evidence {{ $definition->evidence_required ? '(required to submit)' : '(optional)' }}</label>
-                <input id="evidence" name="evidence[]" type="file" multiple accept="{{ collect($definition->allowed_extensions ?: [])->map(fn ($extension) => '.'.$extension)->implode(',') }}" class="mt-1 block w-full">
+                <input id="evidence" name="evidence[]" type="file" multiple accept="{{ collect($definition->allowed_extensions ?: config('impact.evidence_extensions'))->map(fn ($extension) => '.'.$extension)->implode(',') }}" class="mt-1 block w-full">
                 <p class="mt-1 text-xs text-slate-500">
-                    {{ strtoupper(implode(', ', $definition->allowed_extensions ?: [])) }} · Up to {{ $definition->max_files }} files · {{ number_format($definition->max_file_kb / 1024, 1) }} MB each.
+                    {{ strtoupper(implode(', ', $definition->allowed_extensions ?: config('impact.evidence_extensions'))) }} · Up to {{ $definition->max_files }} files · {{ number_format($definition->max_file_kb / 1024, 1) }} MB each.
                 </p>
             </div>
 
@@ -145,16 +157,34 @@
                 <textarea id="notes" name="notes" rows="3" class="mt-1 w-full">{{ old('notes', $revision?->notes) }}</textarea>
             </div>
 
+            <div class="mt-5">
+                <label for="variance_explanation">Variance explanation</label>
+                <textarea id="variance_explanation" name="variance_explanation" rows="3" class="mt-1 w-full" placeholder="Required on submission when the result is ±10% from target, outside a target range, or differs from the expected status.">{{ old('variance_explanation', $revision?->variance_explanation) }}</textarea>
+                <p class="mt-1 text-xs text-slate-500">Formula: ((actual ÷ target) × 100) − 100. A zero target is shown as N/A.</p>
+            </div>
+
             @if($entry)
-                <p class="mt-4 text-sm text-slate-500">Current status: <strong>{{ $entry->status }}</strong> · Revision {{ $revision?->version }}</p>
+                <p class="mt-4 text-sm text-slate-500">Current status: <strong>{{ \App\Support\WorkflowStatus::label($entry->status) }}</strong> · Revision {{ $revision?->version }}</p>
             @endif
 
             <div class="mt-7 flex flex-wrap justify-end gap-3">
-                <a href="{{ route('entries.index', ['period' => substr($period, 0, 7), 'project' => $definition->project_id, 'centre' => $assignment->centre_id, 'lock_project' => request()->boolean('lock_project') ? 1 : null]) }}" class="btn-secondary">Cancel</a>
+                <a href="{{ route('entries.index', ['period' => substr($period, 0, 7), 'period_type' => $definition->frequency, 'project' => $definition->project_id, 'centre' => $assignment->centre_id, 'lock_project' => request()->boolean('lock_project') ? 1 : null]) }}" class="btn-secondary">Cancel</a>
                 <button name="action" value="draft" class="btn-secondary">Save draft</button>
                 <button name="action" value="submit" class="btn-primary">{{ $definition->approval_required ? 'Submit for approval' : 'Submit result' }}</button>
             </div>
+            </fieldset>
         </form>
+
+        @if($entry?->status === \App\Support\WorkflowStatus::FinalApproved)
+            <form method="POST" action="{{ route('entries.amendment', $entry) }}" class="card mt-5 p-5">
+                @csrf
+                <h2 class="font-bold text-ink">Request an amendment</h2>
+                <p class="mt-1 text-sm text-slate-500">The approved value remains official while the amendment is edited and reviewed again.</p>
+                <label for="reason" class="mt-4 block">Reason for amendment</label>
+                <textarea id="reason" name="reason" rows="2" required class="mt-1 w-full"></textarea>
+                <div class="mt-3 flex justify-end"><button class="btn-secondary">Create amendment draft</button></div>
+            </form>
+        @endif
 
         @if($entry?->revisions->isNotEmpty())
             <section class="card mt-6 p-6">
@@ -164,10 +194,13 @@
                         <div class="rounded-lg border border-slate-200 p-4">
                             <div class="flex flex-wrap items-center justify-between gap-2">
                                 <p class="font-semibold text-slate-800">Revision {{ $history->version }} · {{ $history->displayValue() }} {{ $definition->unit }}</p>
-                                <span class="badge bg-slate-100 text-slate-700">{{ $history->status }}</span>
+                                <span class="badge bg-slate-100 text-slate-700">{{ \App\Support\WorkflowStatus::label($history->status) }}</span>
                             </div>
                             <p class="mt-1 text-xs text-slate-500">Saved by {{ $history->user->name }} on {{ $history->created_at->format('d M Y, H:i') }}</p>
                             @if($history->notes)<p class="mt-2 text-sm text-slate-600">{{ $history->notes }}</p>@endif
+                            @if($history->variance_flagged)
+                                <p class="mt-2 rounded bg-amber-50 px-3 py-2 text-sm text-amber-800"><strong>Variance {{ $history->variance_percentage === null ? 'N/A' : (($history->variance_percentage > 0 ? '+' : '').number_format($history->variance_percentage, 1).'%') }}:</strong> {{ $history->variance_explanation ?: 'Explanation missing' }}</p>
+                            @endif
                             @foreach($history->actions as $review)
                                 <p class="mt-2 rounded bg-slate-50 px-3 py-2 text-sm"><strong>{{ $review->action }}</strong> by {{ $review->user->name }}@if($review->comment): {{ $review->comment }}@endif</p>
                             @endforeach

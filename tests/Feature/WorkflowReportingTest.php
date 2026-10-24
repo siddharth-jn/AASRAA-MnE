@@ -13,11 +13,14 @@ use App\Services\CompletenessService;
 use App\Services\EntryService;
 use App\Services\ReportingPeriodService;
 use App\Services\ReportingService;
+use App\Services\TargetService;
+use App\Support\WorkflowStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 class WorkflowReportingTest extends TestCase
@@ -26,7 +29,8 @@ class WorkflowReportingTest extends TestCase
 
     public function test_submission_and_review_create_in_app_notifications(): void
     {
-        [$assignment, $submitter, $reviewer] = $this->configuredAssignment();
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
+        $assignment->indicator->update(['target_tracking' => false]);
 
         $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', [
             'value_state' => 'reported',
@@ -34,15 +38,128 @@ class WorkflowReportingTest extends TestCase
             'notes' => 'Monthly result',
         ], [], true);
 
-        $this->assertSame('SUBMITTED', $entry->status);
+        $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $entry->status);
         $this->assertSame(1, $reviewer->notifications()->count());
         $this->assertSame('approval_required', $reviewer->notifications()->first()->data['kind']);
 
         app(EntryService::class)->review($reviewer, $entry, 'APPROVED', 'Checked');
+        $this->assertSame(WorkflowStatus::PendingMneHead, $entry->fresh()->status);
+        app(EntryService::class)->review($mneHead, $entry, 'APPROVED', 'Final check complete');
 
-        $this->assertSame(1, $submitter->notifications()->count());
-        $this->assertSame('approved', $submitter->notifications()->first()->data['kind']);
-        $this->assertDatabaseHas('indicator_entries', ['id' => $entry->id, 'status' => 'APPROVED']);
+        $this->assertSame(2, $submitter->notifications()->count());
+        $this->assertDatabaseHas('indicator_entries', ['id' => $entry->id, 'status' => WorkflowStatus::FinalApproved]);
+    }
+
+    public function test_monthly_result_can_be_submitted_without_a_target(): void
+    {
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
+        $service = app(EntryService::class);
+        $draft = $service->save($submitter, $assignment, '2026-10-01', ['value_state' => 'reported', 'numeric_value' => 20], [], false);
+
+        $this->assertSame(WorkflowStatus::Draft, $draft->status);
+        $this->actingAs($submitter)
+            ->get(route('entries.edit', ['assignment' => $assignment, 'period' => '2026-10']))
+            ->assertOk()
+            ->assertSee('You can still report the result.');
+
+        $submitted = $service->save($submitter, $assignment, '2026-10-01', ['value_state' => 'reported', 'numeric_value' => 20], [], true);
+
+        $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $submitted->status);
+        app(EntryService::class)->review($reviewer, $submitted, 'APPROVED', null);
+        app(EntryService::class)->review($mneHead, $submitted, 'APPROVED', null);
+        $report = app(ReportingService::class)->report($reviewer, CarbonImmutable::parse('2026-10-01'), CarbonImmutable::parse('2026-11-30'))->first();
+        $this->assertSame('Target missing for some periods', $report['target_display']);
+        $this->assertNull($report['variance']);
+        $this->actingAs($submitter)
+            ->get(route('entries.index', ['period_type' => 'monthly', 'anchor' => '2026-11']))
+            ->assertOk()
+            ->assertDontSee('draft only');
+    }
+
+    public function test_quarterly_result_uses_a_target_for_the_same_fiscal_quarter(): void
+    {
+        [$assignment, $submitter] = $this->configuredAssignment();
+        $assignment->indicator->update(['frequency' => 'quarterly']);
+        app(TargetService::class)->save([
+            'indicator_assignment_id' => $assignment->id,
+            'period' => '2026-08-15',
+            'period_type' => 'quarterly',
+            'target_type' => 'numeric',
+            'value' => 30,
+            'active' => true,
+        ]);
+
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 30], [], true);
+
+        $this->assertSame('2026-07-01', $entry->period->toDateString());
+        $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $entry->status);
+        $this->actingAs($submitter)
+            ->get(route('entries.edit', ['assignment' => $assignment, 'period' => '2026-08', 'period_type' => 'quarterly']))
+            ->assertOk()
+            ->assertSee('Target:')
+            ->assertDontSee('Target missing for this quarterly period');
+    }
+
+    public function test_report_does_not_compare_results_with_only_some_period_targets(): void
+    {
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
+        foreach (['2026-09-01', '2026-10-01'] as $period) {
+            $target = app(TargetService::class)->save([
+                'indicator_assignment_id' => $assignment->id,
+                'period' => $period,
+                'period_type' => 'monthly',
+                'target_type' => 'numeric',
+                'value' => 20,
+                'active' => true,
+            ]);
+            $entry = app(EntryService::class)->save($submitter, $assignment, $period, ['value_state' => 'reported', 'numeric_value' => 20], [], true);
+            app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
+            app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
+        }
+
+        $target->update(['active' => false]);
+        $row = app(ReportingService::class)->report($reviewer, CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-10-31'))->first();
+
+        $this->assertSame(40.0, $row['achievement']);
+        $this->assertNull($row['target']);
+        $this->assertSame('Target missing for some periods', $row['target_display']);
+        $this->assertNull($row['variance']);
+    }
+
+    public function test_all_projects_report_does_not_compare_with_only_one_project_target(): void
+    {
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
+        $secondCentre = Centre::create(['code' => 'C2', 'name' => 'Second centre', 'type' => 'Education Centre', 'region' => 'Dehradun']);
+        $assignment->indicator->project->centres()->attach($secondCentre);
+        foreach ([$submitter, $reviewer, $mneHead] as $user) {
+            $user->centres()->attach($secondCentre);
+        }
+        $secondAssignment = IndicatorAssignment::create([
+            'indicator_definition_id' => $assignment->indicator_definition_id,
+            'centre_id' => $secondCentre->id,
+            'required' => true,
+        ]);
+        app(TargetService::class)->save([
+            'indicator_assignment_id' => $assignment->id,
+            'period' => '2026-09-01',
+            'period_type' => 'monthly',
+            'target_type' => 'numeric',
+            'value' => 20,
+            'active' => true,
+        ]);
+
+        foreach ([$assignment, $secondAssignment] as $projectAssignment) {
+            $entry = app(EntryService::class)->save($submitter, $projectAssignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 20], [], true);
+            app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
+            app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
+        }
+
+        $row = app(ReportingService::class)->consolidatedReport($reviewer, CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-09-30'))->first();
+
+        $this->assertSame(40.0, $row['achievement']);
+        $this->assertNull($row['target']);
+        $this->assertSame('Target missing for some projects', $row['target_display']);
+        $this->assertNull($row['variance']);
     }
 
     public function test_completeness_requires_every_due_indicator(): void
@@ -89,7 +206,7 @@ class WorkflowReportingTest extends TestCase
 
     public function test_phase_four_pages_are_available_with_scoped_data(): void
     {
-        [$assignment, $submitter, $reviewer] = $this->configuredAssignment();
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
         app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 20], [], false);
 
         $this->actingAs($reviewer)->get('/')->assertOk();
@@ -126,7 +243,7 @@ class WorkflowReportingTest extends TestCase
 
     public function test_project_overview_has_no_period_form_and_activity_rows_show_target_and_actual(): void
     {
-        [$assignment, $submitter, $reviewer] = $this->configuredAssignment();
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
         IndicatorTarget::create([
             'indicator_assignment_id' => $assignment->id,
             'period' => '2026-09-01',
@@ -136,8 +253,9 @@ class WorkflowReportingTest extends TestCase
             'value' => 20,
             'active' => true,
         ]);
-        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18], [], true);
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18, 'variance_explanation' => 'Attendance was affected by school closures.'], [], true);
         app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
+        app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
 
         $this->actingAs($reviewer)
             ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'overview']))
@@ -178,8 +296,8 @@ class WorkflowReportingTest extends TestCase
             ->assertOk()
             ->assertSee($assignment->centre->name)
             ->assertDontSee($otherCentre->name)
-            ->assertDontSee('name="indicator"', false)
-            ->assertDontSee('name="category"', false)
+            ->assertSee('name="indicator"', false)
+            ->assertSee('name="category"', false)
             ->assertSee('All programme projects');
 
         $this->actingAs($reviewer)
@@ -395,12 +513,13 @@ class WorkflowReportingTest extends TestCase
 
     public function test_project_consolidation_uses_the_configured_centre_aggregation(): void
     {
-        [$assignment, $submitter, $reviewer] = $this->configuredAssignment();
-        $assignment->indicator->update(['time_aggregation' => 'LATEST SNAPSHOT', 'centre_aggregation' => 'SUM']);
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
+        $assignment->indicator->update(['time_aggregation' => 'LATEST SNAPSHOT', 'centre_aggregation' => 'SUM', 'target_tracking' => false]);
         $secondCentre = Centre::create(['code' => 'C2', 'name' => 'Second centre', 'type' => 'Education Centre', 'region' => 'Dehradun']);
         $assignment->indicator->project->centres()->attach($secondCentre);
         $submitter->centres()->attach($secondCentre);
         $reviewer->centres()->attach($secondCentre);
+        $mneHead->centres()->attach($secondCentre);
         $secondAssignment = IndicatorAssignment::create([
             'indicator_definition_id' => $assignment->indicator_definition_id,
             'centre_id' => $secondCentre->id,
@@ -410,6 +529,7 @@ class WorkflowReportingTest extends TestCase
         foreach ([[$assignment, 35], [$secondAssignment, 20]] as [$centreAssignment, $value]) {
             $entry = app(EntryService::class)->save($submitter, $centreAssignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => $value], [], true);
             app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
+            app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
         }
 
         $rows = app(ReportingService::class)->consolidatedReport(
@@ -420,42 +540,124 @@ class WorkflowReportingTest extends TestCase
         );
 
         $this->assertSame(55.0, $rows->first()['achievement']);
+        $this->assertSame(2, $rows->first()['centre_count']);
+
+        $this->actingAs($reviewer)
+            ->get(route('reports.index', ['anchor' => '2026-09']))
+            ->assertOk()
+            ->assertSee('All projects (2)')
+            ->assertSee('SUM across projects')
+            ->assertSee('55.00 sessions')
+            ->assertDontSee('35.00 sessions');
+
+        $this->actingAs($reviewer)
+            ->get(route('reports.index', ['centre' => $assignment->centre_id, 'anchor' => '2026-09']))
+            ->assertOk()
+            ->assertSee('35.00 sessions')
+            ->assertDontSee('55.00 sessions');
+
+        $export = $this->actingAs($reviewer)->get(route('reports.export', ['anchor' => '2026-09']));
+        $export->assertOk();
+        $this->assertStringContainsString('All projects (2)', $export->streamedContent());
+
+        $this->actingAs($reviewer)
+            ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'activities', 'anchor' => '2026-09']))
+            ->assertOk()
+            ->assertSee('SUM across projects')
+            ->assertSee('Actual: 55.00 sessions');
+    }
+
+    public function test_status_counts_are_combined_across_projects(): void
+    {
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
+        $assignment->indicator->update([
+            'data_type' => 'status',
+            'unit' => 'status',
+            'options' => ['Open', 'Closed'],
+            'time_aggregation' => 'STATUS',
+            'centre_aggregation' => 'STATUS',
+            'target_tracking' => false,
+        ]);
+        $secondCentre = Centre::create(['code' => 'C2', 'name' => 'Second centre', 'type' => 'Education Centre', 'region' => 'Dehradun']);
+        $assignment->indicator->project->centres()->attach($secondCentre);
+        $submitter->centres()->attach($secondCentre);
+        $reviewer->centres()->attach($secondCentre);
+        $secondAssignment = IndicatorAssignment::create([
+            'indicator_definition_id' => $assignment->indicator_definition_id,
+            'centre_id' => $secondCentre->id,
+            'required' => true,
+        ]);
+
+        foreach ([[$assignment, 'Open'], [$secondAssignment, 'Closed']] as [$centreAssignment, $status]) {
+            $entry = app(EntryService::class)->save($submitter, $centreAssignment, '2026-09-01', ['value_state' => 'reported', 'text_value' => $status], [], true);
+            app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
+            app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
+        }
+
+        $rows = app(ReportingService::class)->consolidatedReport($reviewer, CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-09-30'));
+
+        $this->assertEquals(['Open' => 1, 'Closed' => 1], $rows->first()['achievement']);
+        $this->actingAs($reviewer)
+            ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'activities', 'anchor' => '2026-09']))
+            ->assertOk()
+            ->assertSee('Open: 1')
+            ->assertSee('Closed: 1');
     }
 
     public function test_editing_an_approved_result_preserves_the_official_revision_until_reapproval(): void
     {
-        [$assignment, $submitter, $reviewer] = $this->configuredAssignment();
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
+        $assignment->indicator->update(['target_tracking' => false]);
         $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 10], [], true);
         app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
+        app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
 
+        $entry = app(EntryService::class)->requestAmendment($submitter, $entry->fresh(), 'Correct a transcription mistake.');
         $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 12], [], true);
         $officialRows = app(ReportingService::class)->report($reviewer, CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-09-30'));
 
-        $this->assertSame('SUBMITTED', $entry->status);
-        $this->assertSame(2, $entry->revisions()->count());
+        $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $entry->status);
+        $this->assertSame(3, $entry->revisions()->count());
         $this->assertEquals(10, $entry->approvedRevision->numeric_value);
         $this->assertSame(10.0, $officialRows->first()['achievement']);
 
         app(EntryService::class)->review($reviewer, $entry, 'APPROVED', 'Updated evidence checked.');
+        app(EntryService::class)->review($mneHead, $entry, 'APPROVED', 'Final amendment check.');
 
         $updatedRows = app(ReportingService::class)->report($reviewer, CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-09-30'));
         $this->assertSame(12.0, $updatedRows->first()['achievement']);
     }
 
-    public function test_evidence_review_confirmation_is_required_before_approval(): void
+    public function test_approval_does_not_require_a_second_evidence_confirmation(): void
     {
-        [$assignment, $submitter, $reviewer] = $this->configuredAssignment();
-        $assignment->indicator->update(['evidence_review_required' => true]);
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
+        $assignment->indicator->update(['evidence_review_required' => true, 'target_tracking' => false]);
         $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18], [], true);
 
-        $this->actingAs($reviewer)->post(route('approvals.review', $entry), ['action' => 'APPROVED'])->assertSessionHasErrors('evidence_reviewed');
-        $this->assertSame('SUBMITTED', $entry->fresh()->status);
+        $this->actingAs($reviewer)->post(route('approvals.review', $entry), ['action' => 'APPROVED'])->assertSessionHasNoErrors();
+        $this->assertSame(WorkflowStatus::PendingMneHead, $entry->fresh()->status);
 
-        $this->actingAs($reviewer)->post(route('approvals.review', $entry), [
-            'action' => 'APPROVED',
-            'evidence_reviewed' => '1',
-        ])->assertSessionHasNoErrors();
-        $this->assertSame('APPROVED', $entry->fresh()->status);
+        $this->actingAs($mneHead)->post(route('approvals.review', $entry), ['action' => 'APPROVED'])->assertSessionHasNoErrors();
+        $this->assertSame(WorkflowStatus::FinalApproved, $entry->fresh()->status);
+    }
+
+    public function test_required_evidence_is_still_checked_when_submitting(): void
+    {
+        [$assignment, $submitter] = $this->configuredAssignment();
+        $assignment->indicator->update(['evidence_required' => true, 'min_files' => 1]);
+
+        try {
+            app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18], [], true);
+            $this->fail('Submission without required evidence should be rejected.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('evidence', $exception->errors());
+        }
+
+        Storage::fake((string) config('impact.evidence_disk', 'local'));
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18], [UploadedFile::fake()->create('proof.pdf', 50, 'application/pdf')], true);
+
+        $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $entry->status);
+        $this->assertCount(1, $entry->currentRevision->evidence);
     }
 
     public function test_deadline_command_notifies_staff_with_missing_obligations_once(): void
@@ -473,16 +675,17 @@ class WorkflowReportingTest extends TestCase
         }
     }
 
-    /** @return array{IndicatorAssignment, User, User} */
+    /** @return array{IndicatorAssignment, User, User, User} */
     private function configuredAssignment(): array
     {
         $submitter = User::factory()->create(['role' => 'PROGRAM LEAD', 'active' => true]);
         $reviewer = User::factory()->create(['role' => 'SENIOR PROGRAM LEAD', 'active' => true]);
+        $mneHead = User::factory()->create(['role' => 'M&E HEAD', 'active' => true]);
         $programme = Programme::create(['name' => 'Test programme', 'description' => 'Test']);
         $project = Project::create(['programme_id' => $programme->id, 'code' => 'TEST', 'name' => 'Test project', 'description' => 'Test']);
         $centre = Centre::create(['code' => 'C1', 'name' => 'Test centre', 'type' => 'Education Centre', 'region' => 'Dehradun']);
         $project->centres()->attach($centre);
-        foreach ([$submitter, $reviewer] as $user) {
+        foreach ([$submitter, $reviewer, $mneHead] as $user) {
             $user->projects()->attach($project);
             $user->centres()->attach($centre);
         }
@@ -504,6 +707,6 @@ class WorkflowReportingTest extends TestCase
         ]);
         $assignment = IndicatorAssignment::create(['indicator_definition_id' => $indicator->id, 'centre_id' => $centre->id, 'required' => true]);
 
-        return [$assignment->load(['indicator.project', 'centre']), $submitter, $reviewer];
+        return [$assignment->load(['indicator.project', 'centre']), $submitter, $reviewer, $mneHead];
     }
 }

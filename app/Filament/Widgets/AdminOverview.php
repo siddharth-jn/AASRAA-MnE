@@ -11,6 +11,7 @@ use App\Models\IndicatorDefinition;
 use App\Models\IndicatorEntry;
 use App\Models\Project;
 use App\Models\User;
+use App\Support\WorkflowStatus;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 
@@ -66,7 +67,7 @@ class AdminOverview extends StatsOverviewWidget
                 ->description('Definitions currently in use')
                 ->descriptionIcon('heroicon-m-chart-bar')
                 ->url(IndicatorDefinitionResource::getUrl()),
-            Stat::make('Pending approvals', IndicatorEntry::query()->where('status', 'SUBMITTED')->count())
+            Stat::make('Pending approvals', IndicatorEntry::query()->whereIn('status', WorkflowStatus::pending())->count())
                 ->description('Submitted records awaiting review')
                 ->descriptionIcon('heroicon-m-clock'),
         ];

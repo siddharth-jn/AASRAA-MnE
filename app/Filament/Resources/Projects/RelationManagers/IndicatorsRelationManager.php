@@ -5,7 +5,6 @@ namespace App\Filament\Resources\Projects\RelationManagers;
 use App\Filament\Resources\IndicatorDefinitions\Schemas\IndicatorDefinitionForm;
 use App\Models\IndicatorDefinition;
 use App\Services\IndicatorService;
-use App\Services\TargetService;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Resources\RelationManagers\RelationManager;
@@ -84,12 +83,6 @@ class IndicatorsRelationManager extends RelationManager
     {
         $setupFields = [
             'target_centre_ids',
-            'set_targets_now',
-            'target_period_type',
-            'target_period',
-            'same_target_all_centres',
-            'shared_target',
-            'centre_targets',
         ];
         $this->pendingIndicatorSetup = Arr::only($data, $setupFields);
         $data = Arr::except($data, $setupFields);
@@ -106,47 +99,6 @@ class IndicatorsRelationManager extends RelationManager
             ->values();
 
         $indicator->centres()->sync($centreIds->all());
-
-        if (! $indicator->target_tracking || ! ($this->pendingIndicatorSetup['set_targets_now'] ?? false)) {
-            $this->pendingIndicatorSetup = [];
-
-            return $indicator;
-        }
-
-        $assignments = $indicator->assignments()
-            ->whereIn('centre_id', $centreIds)
-            ->get()
-            ->keyBy('centre_id');
-        $sameForAllCentres = (bool) ($this->pendingIndicatorSetup['same_target_all_centres'] ?? true);
-
-        foreach ($centreIds as $centreId) {
-            $assignment = $assignments->get($centreId);
-            if (! $assignment) {
-                continue;
-            }
-
-            $targetValue = $sameForAllCentres
-                ? ($this->pendingIndicatorSetup['shared_target'] ?? [])
-                : ($this->pendingIndicatorSetup['centre_targets'][$centreId] ?? []);
-            $targetType = match ($indicator->direction) {
-                'range' => 'range',
-                'status' => 'status',
-                default => 'numeric',
-            };
-
-            app(TargetService::class)->save([
-                'indicator_assignment_id' => $assignment->id,
-                'period_type' => $this->pendingIndicatorSetup['target_period_type'],
-                'period' => $this->pendingIndicatorSetup['target_period'],
-                'target_type' => $targetType,
-                'value' => $targetValue['value'] ?? null,
-                'minimum_value' => $targetValue['minimum'] ?? null,
-                'maximum_value' => $targetValue['maximum'] ?? null,
-                'status_value' => $targetValue['status'] ?? null,
-                'active' => true,
-            ]);
-        }
-
         $this->pendingIndicatorSetup = [];
 
         return $indicator;

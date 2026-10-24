@@ -22,6 +22,8 @@ use Throwable;
 
 class ImportService
 {
+    public function __construct(private readonly IndicatorReportingPeriodService $periods) {}
+
     public function upload(User $user, Project $project, UploadedFile $file): ImportBatch
     {
         $fingerprint = hash_file('sha256', $file->getRealPath());
@@ -104,10 +106,19 @@ class ImportService
 
         $batch->load(['project.centres', 'project.indicators.assignments']);
         $assignmentIds = $batch->project->indicators->flatMap->assignments->pluck('id');
+        $frequencyByAssignmentId = $batch->project->indicators
+            ->flatMap(fn (IndicatorDefinition $indicator) => $indicator->assignments->mapWithKeys(
+                fn (IndicatorAssignment $assignment): array => [$assignment->id => $indicator->frequency],
+            ));
         $seen = IndicatorEntry::query()
             ->whereIn('indicator_assignment_id', $assignmentIds)
             ->get(['indicator_assignment_id', 'period'])
-            ->mapWithKeys(fn (IndicatorEntry $entry): array => [$entry->indicator_assignment_id.'-'.$entry->period->format('Y-m-d') => true])
+            ->mapWithKeys(function (IndicatorEntry $entry) use ($frequencyByAssignmentId): array {
+                $frequency = (string) $frequencyByAssignmentId->get($entry->indicator_assignment_id, 'monthly');
+                $period = $this->periods->start($entry->period, $frequency);
+
+                return [$entry->indicator_assignment_id.'-'.$period->format('Y-m-d') => true];
+            })
             ->all();
         foreach ($batch->rows()->orderBy('row_number')->cursor() as $row) {
             [$status, $normalized, $error] = $this->normalizeRow($batch->project, $row, $mapping, $seen);
@@ -218,9 +229,10 @@ class ImportService
         } catch (Throwable) {
             return ['invalid', null, 'The reporting period is not a valid date.'];
         }
-        if (! $indicator->isEffectiveForPeriod($period)) {
+        if (! $this->periods->isAvailable($indicator, $period)) {
             return ['invalid', null, 'Reporting for this indicator starts in '.$indicator->effective_date->format('F Y').'.'];
         }
+        $period = $this->periods->start($period, $indicator->frequency);
         $key = $assignment->id.'-'.$period->toDateString();
         if (isset($seen[$key])) {
             return ['duplicate', ['assignment_id' => $assignment->id, 'period' => $period->toDateString()], 'A reporting record already exists for this indicator, project, and period.'];

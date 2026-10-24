@@ -120,6 +120,33 @@ class ImportWorkflowTest extends TestCase
         $this->assertSame('Reporting for this indicator starts in September 2026.', $batch->rows->first()->error);
     }
 
+    public function test_import_normalizes_dates_within_a_quarter_and_rejects_a_second_row_for_that_quarter(): void
+    {
+        [$user, $project, $assignment] = $this->configuredProject();
+        $assignment->indicator->update([
+            'frequency' => 'quarterly',
+            'effective_date' => '2026-04-01',
+        ]);
+        Storage::fake('local');
+        $batch = app(ImportService::class)->upload($user, $project, UploadedFile::fake()->createWithContent(
+            'quarterly.csv',
+            "centre,indicator,period,value\nC1,TEST-1,2026-05-15,18\nC1,TEST-1,2026-06-20,22\n",
+        ));
+        $batch = app(ImportService::class)->validateRows($batch, [
+            'centre' => 'centre',
+            'indicator' => 'indicator',
+            'period' => 'period',
+            'value' => 'value',
+            'numerator' => null,
+            'denominator' => null,
+            'notes' => null,
+        ]);
+
+        $this->assertSame('valid', $batch->rows[0]->status);
+        $this->assertSame('2026-04-01', $batch->rows[0]->normalized['period']);
+        $this->assertSame('duplicate', $batch->rows[1]->status);
+    }
+
     public function test_authorized_user_can_open_import_history_and_download_template(): void
     {
         [$user, $project] = $this->configuredProject();

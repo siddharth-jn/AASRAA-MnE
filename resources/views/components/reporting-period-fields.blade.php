@@ -1,4 +1,4 @@
-@props(['period', 'autoSubmit' => false])
+@props(['period', 'autoSubmit' => false, 'types' => null])
 
 @php
     $financialYearStartMonth = (int) config('impact.financial_year_start_month', 4);
@@ -8,23 +8,27 @@
         : $today->setDate($today->year, $financialYearStartMonth, 1);
     $financialYears = collect(range(0, 4))->map(fn (int $offset) => $currentFinancialYearStart->subYears($offset));
     $selectedPeriodStart = $period['start']->format('Y-m');
+    $periodTypes = $types ?? ['monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'half_yearly' => 'Half-yearly', 'annual' => 'Annual', 'ytd' => 'Year to date', 'custom' => 'Custom dates'];
 @endphp
 
 <div x-data="{ periodType: @js($period['type']) }" class="contents">
     <div>
         <label for="period_type">Reporting period</label>
         <select id="period_type" name="period_type" x-model="periodType" @if($autoSubmit) @change="$nextTick(() => $el.form.submit())" @endif class="mt-1 w-full">
-            @foreach(['monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'half_yearly' => 'Half-yearly', 'annual' => 'Annual', 'ytd' => 'Year to date', 'custom' => 'Custom dates'] as $value => $label)
+            @foreach($periodTypes as $value => $label)
                 <option value="{{ $value }}" @selected($period['type'] === $value)>{{ $label }}</option>
             @endforeach
         </select>
     </div>
 
+    @if(array_key_exists('monthly', $periodTypes))
     <div x-show="periodType === 'monthly'">
         <label for="monthly_anchor">Month</label>
         <input id="monthly_anchor" name="anchor" type="month" value="{{ $period['type'] === 'monthly' ? $selectedPeriodStart : $today->format('Y-m') }}" max="{{ $today->format('Y-m') }}" :disabled="periodType !== 'monthly'" @disabled($period['type'] !== 'monthly') @if($autoSubmit) onchange="this.form.submit()" @endif class="mt-1 w-full">
     </div>
+    @endif
 
+    @if(array_key_exists('quarterly', $periodTypes))
     <div x-cloak x-show="periodType === 'quarterly'">
         <label for="quarterly_anchor">Quarter</label>
         <select id="quarterly_anchor" name="anchor" :disabled="periodType !== 'quarterly'" @disabled($period['type'] !== 'quarterly') @if($autoSubmit) onchange="this.form.submit()" @endif class="mt-1 w-full">
@@ -37,7 +41,9 @@
             @endforeach
         </select>
     </div>
+    @endif
 
+    @if(array_key_exists('half_yearly', $periodTypes))
     <div x-cloak x-show="periodType === 'half_yearly'">
         <label for="half_yearly_anchor">Half-year</label>
         <select id="half_yearly_anchor" name="anchor" :disabled="periodType !== 'half_yearly'" @disabled($period['type'] !== 'half_yearly') @if($autoSubmit) onchange="this.form.submit()" @endif class="mt-1 w-full">
@@ -50,7 +56,9 @@
             @endforeach
         </select>
     </div>
+    @endif
 
+    @if(array_key_exists('annual', $periodTypes))
     <div x-cloak x-show="periodType === 'annual'">
         <label for="annual_anchor">Financial year</label>
         <select id="annual_anchor" name="anchor" :disabled="periodType !== 'annual'" @disabled($period['type'] !== 'annual') @if($autoSubmit) onchange="this.form.submit()" @endif class="mt-1 w-full">
@@ -59,9 +67,13 @@
             @endforeach
         </select>
     </div>
+    @endif
 
+    @if(array_key_exists('ytd', $periodTypes))
     <input type="hidden" name="anchor" value="{{ $period['end']->format('Y-m') }}" :disabled="periodType !== 'ytd'" @disabled($period['type'] !== 'ytd')>
+    @endif
 
+    @if(array_key_exists('custom', $periodTypes))
     <div x-cloak x-show="periodType === 'custom'">
         <label for="start">Custom from</label>
         <input id="start" name="start" type="date" value="{{ request('start', $period['start']->format('Y-m-d')) }}" :disabled="periodType !== 'custom'" @disabled($period['type'] !== 'custom') class="mt-1 w-full">
@@ -72,5 +84,6 @@
     </div>
     @if($autoSubmit)
         <div x-cloak x-show="periodType === 'custom'" class="flex items-end"><button class="btn-secondary">Update dates</button></div>
+    @endif
     @endif
 </div>

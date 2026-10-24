@@ -2,83 +2,106 @@
 
 namespace App\Filament\Resources\IndicatorTargets\Schemas;
 
-use App\Models\IndicatorAssignment;
-use Filament\Forms\Components\DatePicker;
+use App\Models\IndicatorTarget;
+use App\Services\IndicatorReportingPeriodService;
+use App\Services\TargetService;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
-use Illuminate\Database\Eloquent\Builder;
 
 class IndicatorTargetForm
 {
-    public static function configure(Schema $schema, ?int $indicatorId = null): Schema
+    public static function configure(Schema $schema): Schema
     {
-        return $schema->components(self::components($indicatorId));
+        return $schema->components(self::components());
     }
 
     /** @return array<int, mixed> */
-    public static function components(?int $indicatorId = null): array
+    public static function components(): array
     {
         return [
             Section::make('Target scope')
-                ->description($indicatorId === null
-                    ? 'Set a target for one configured indicator and project.'
-                    : 'Set a target for one project assigned to this indicator.')
+                ->description('This target belongs to the indicator, project, and reporting period shown below.')
                 ->schema([
-                    Select::make('indicator_assignment_id')
-                        ->label($indicatorId === null ? 'Indicator and project' : 'Project')
-                        ->options(fn (): array => IndicatorAssignment::query()
-                            ->with(['indicator.project', 'centre'])
-                            ->whereHas('indicator', fn (Builder $query): Builder => $query->where('target_tracking', true))
-                            ->when($indicatorId, fn (Builder $query, int $selectedIndicatorId): Builder => $query->where('indicator_definition_id', $selectedIndicatorId))
-                            ->get()
-                            ->sortBy(fn (IndicatorAssignment $assignment): string => $assignment->display_name)
-                            ->mapWithKeys(fn (IndicatorAssignment $assignment): array => [
-                                $assignment->id => $indicatorId === null ? $assignment->display_name : $assignment->centre->name,
-                            ])
-                            ->all())
-                        ->searchable()
-                        ->preload()
-                        ->required()
+                    Hidden::make('indicator_assignment_id'),
+                    TextEntry::make('indicator_and_project')
+                        ->label('Indicator and project')
+                        ->state(fn (?IndicatorTarget $record): string => $record?->assignment?->display_name ?? '—')
                         ->columnSpanFull(),
-                    Select::make('period_type')
-                        ->options(config('impact.target_periods'))
-                        ->default('monthly')
-                        ->required(),
-                    DatePicker::make('period')
-                        ->label('Period containing date')
-                        ->helperText('The system converts this to the correct month, fiscal quarter, half-year, or financial year.')
-                        ->required(),
+                    TextEntry::make('reporting_period')
+                        ->label('Reporting period')
+                        ->state(fn (?IndicatorTarget $record): string => $record
+                            ? app(IndicatorReportingPeriodService::class)->label($record->period, $record->period_type)
+                            : '—')
+                        ->columnSpanFull(),
+                    Hidden::make('period_type'),
+                    Hidden::make('period'),
                 ])
                 ->columns(2),
             Section::make('Target value')
                 ->schema([
-                    Select::make('target_type')
-                        ->options(['numeric' => 'Numeric target', 'range' => 'Target range', 'status' => 'Expected status'])
-                        ->live()
-                        ->default('numeric')
-                        ->required(),
+                    Hidden::make('target_type'),
+                    TextEntry::make('target_format')
+                        ->label('Target format')
+                        ->state(fn (?IndicatorTarget $record): string => match ($record?->assignment?->indicator ? app(TargetService::class)->typeForIndicator($record->assignment->indicator) : null) {
+                            'range' => 'Target range',
+                            'status' => 'Expected status',
+                            default => 'Numeric target',
+                        }),
                     TextInput::make('value')
                         ->label('Target value')
                         ->numeric()
+                        ->step(fn (?IndicatorTarget $record): float|int => $record?->assignment?->indicator
+                            ? app(TargetService::class)->stepForIndicator($record->assignment->indicator)
+                            : 0.01)
+                        ->minValue(fn (?IndicatorTarget $record): ?float => $record?->assignment?->indicator
+                            ? app(TargetService::class)->minimumForIndicator($record->assignment->indicator)
+                            : null)
+                        ->maxValue(fn (?IndicatorTarget $record): ?float => $record?->assignment?->indicator
+                            ? app(TargetService::class)->maximumForIndicator($record->assignment->indicator)
+                            : null)
                         ->required(fn (Get $get): bool => $get('target_type') === 'numeric')
                         ->visible(fn (Get $get): bool => $get('target_type') === 'numeric'),
                     TextInput::make('minimum_value')
                         ->label('Range minimum')
                         ->numeric()
+                        ->step(fn (?IndicatorTarget $record): float|int => $record?->assignment?->indicator
+                            ? app(TargetService::class)->stepForIndicator($record->assignment->indicator)
+                            : 0.01)
+                        ->minValue(fn (?IndicatorTarget $record): ?float => $record?->assignment?->indicator
+                            ? app(TargetService::class)->minimumForIndicator($record->assignment->indicator)
+                            : null)
+                        ->maxValue(fn (?IndicatorTarget $record): ?float => $record?->assignment?->indicator
+                            ? app(TargetService::class)->maximumForIndicator($record->assignment->indicator)
+                            : null)
                         ->required(fn (Get $get): bool => $get('target_type') === 'range')
                         ->visible(fn (Get $get): bool => $get('target_type') === 'range'),
                     TextInput::make('maximum_value')
                         ->label('Range maximum')
                         ->numeric()
+                        ->step(fn (?IndicatorTarget $record): float|int => $record?->assignment?->indicator
+                            ? app(TargetService::class)->stepForIndicator($record->assignment->indicator)
+                            : 0.01)
+                        ->minValue(fn (?IndicatorTarget $record): ?float => $record?->assignment?->indicator
+                            ? app(TargetService::class)->minimumForIndicator($record->assignment->indicator)
+                            : null)
+                        ->maxValue(fn (?IndicatorTarget $record): ?float => $record?->assignment?->indicator
+                            ? app(TargetService::class)->maximumForIndicator($record->assignment->indicator)
+                            : null)
                         ->required(fn (Get $get): bool => $get('target_type') === 'range')
                         ->visible(fn (Get $get): bool => $get('target_type') === 'range'),
-                    TextInput::make('status_value')
+                    Select::make('status_value')
                         ->label('Expected status')
+                        ->options(fn (?IndicatorTarget $record): array => $record?->assignment?->indicator
+                            ? app(TargetService::class)->statusOptionsForIndicator($record->assignment->indicator)
+                            : [])
+                        ->native(false)
                         ->required(fn (Get $get): bool => $get('target_type') === 'status')
                         ->visible(fn (Get $get): bool => $get('target_type') === 'status'),
                     Textarea::make('notes')

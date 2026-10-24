@@ -11,6 +11,7 @@ class IndicatorTarget extends ImpactModel
         return parent::casts() + [
             'period' => 'date',
             'period_end' => 'date',
+            'period_end' => 'date',
             'value' => 'decimal:4',
             'minimum_value' => 'decimal:4',
             'maximum_value' => 'decimal:4',

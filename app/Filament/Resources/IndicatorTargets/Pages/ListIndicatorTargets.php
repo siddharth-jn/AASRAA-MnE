@@ -3,7 +3,7 @@
 namespace App\Filament\Resources\IndicatorTargets\Pages;
 
 use App\Filament\Resources\IndicatorTargets\IndicatorTargetResource;
-use Filament\Actions\CreateAction;
+use Filament\Actions\Action;
 use Filament\Resources\Pages\ListRecords;
 
 class ListIndicatorTargets extends ListRecords
@@ -13,7 +13,9 @@ class ListIndicatorTargets extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            CreateAction::make(),
+            Action::make('setTargets')
+                ->label('Set targets')
+                ->url(IndicatorTargetResource::getUrl('set')),
         ];
     }
 }

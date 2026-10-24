@@ -63,16 +63,17 @@
         <section class="card p-6">
             <h2 class="font-bold text-ink">{{ $sectionCategories[$section] === 'KPI' ? 'Key performance indicators' : $sectionCategories[$section].' indicators' }}</h2>
             @php($selectedCentre = $project->centres->firstWhere('id', (int) request('centre')))
-            <p class="mt-1 text-sm text-slate-500">{{ $selectedCentre ? 'Showing indicators assigned to '.$selectedCentre->name.'.' : 'Showing consolidated information across all programme projects.' }}</p>
+            <p class="mt-1 text-sm text-slate-500">{{ $selectedCentre ? 'Showing indicators assigned to '.$selectedCentre->name.'.' : 'Showing each indicator combined across all accessible programme projects, using its Across projects setting.' }}</p>
             <div class="mt-4 divide-y divide-slate-100">
                 @forelse($indicators as $indicator)
                     @php($row = $rows->first(fn ($candidate) => $candidate['indicator']->id === $indicator->id))
                     @php($targetSummary = $targetSummaries->get($indicator->id, ['value' => null, 'display' => 'Not set']))
+                    @php($acrossProjectMethod = $row['across_project_method'] ?? (array_key_exists($indicator->centre_aggregation, app(\App\Services\IndicatorService::class)->acrossProjectOptions($indicator->data_type)) ? $indicator->centre_aggregation : 'NON-AGGREGATABLE'))
                     <a href="{{ route('kpis.show', [$project, $indicator, 'centre' => request('centre')]) }}" class="flex items-center justify-between gap-3 rounded-lg px-2 py-4 hover:bg-slate-50">
-                        <div><p class="text-sm font-semibold text-slate-800">{{ $indicator->name }}</p><p class="text-xs text-slate-500">{{ $indicator->unit }} · {{ $indicator->time_aggregation }} over time · {{ $indicator->assignments_count }} projects</p></div>
+                        <div><p class="text-sm font-semibold text-slate-800">{{ $indicator->name }}</p><p class="text-xs text-slate-500">{{ $indicator->unit }} · {{ $indicator->time_aggregation }} over time{{ $selectedCentre ? '' : ' · '.($acrossProjectMethod === 'NON-AGGREGATABLE' ? 'Do not combine' : ($acrossProjectMethod.' across projects')) }} · {{ $indicator->assignments_count }} projects</p></div>
                         <div class="text-right">
                             @if($row)
-                                <p class="text-sm font-bold text-ink">Actual: {{ is_numeric($row['achievement']) ? number_format($row['achievement'], $indicator->precision).' '.$indicator->unit : 'Not aggregatable' }}</p>
+                                <p class="text-sm font-bold text-ink">Actual: {{ is_numeric($row['achievement']) ? number_format($row['achievement'], $indicator->precision).' '.$indicator->unit : (is_array($row['achievement']) ? (collect($row['achievement'])->map(fn ($count, $status) => "$status: $count")->join(', ') ?: 'No approved result') : ($selectedCentre ? 'No approved value' : 'Select a project')) }}</p>
                                 <p class="text-xs text-slate-500">Target: {{ $row['target_display'] }}{{ $row['target'] !== null ? ' '.$indicator->unit : '' }} · {{ $row['performance_status'] }}</p>
                             @else
                                 <p class="text-sm font-semibold text-slate-500">No approved result</p>
@@ -88,7 +89,7 @@
             <h2 class="font-bold text-ink">Evidence files</h2><p class="mt-1 text-sm text-slate-500">Authorized proof attached during the selected reporting period.</p>
             <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 @forelse($evidence as $file)
-                    <article class="rounded-lg border border-slate-200 p-4"><p class="truncate text-sm font-semibold text-slate-800">{{ $file->original_name }}</p><p class="mt-1 text-xs text-slate-500">{{ $file->revision->entry->assignment->indicator->name }}</p><p class="text-xs text-slate-500">{{ $file->revision->entry->assignment->centre->name }} · {{ $file->revision->entry->period->format('M Y') }}</p><p class="mt-2 text-xs text-slate-400">Uploaded by {{ $file->user->name }} on {{ $file->created_at->format('d M Y') }}</p><div class="mt-3 flex gap-3 text-xs font-semibold">@if(str_starts_with($file->mime_type, 'image/') || $file->mime_type === 'application/pdf')<a class="text-brand-700" href="{{ route('evidence.preview', $file) }}" target="_blank">Preview</a>@endif<a class="text-brand-700" href="{{ route('evidence.download', $file) }}">Download</a></div></article>
+                    <article class="rounded-lg border border-slate-200 p-4"><p class="truncate text-sm font-semibold text-slate-800">{{ $file->original_name }}</p><p class="mt-1 text-xs text-slate-500">{{ $file->revision->entry->assignment->indicator->name }}</p><p class="text-xs text-slate-500">{{ $file->revision->entry->assignment->centre->name }} · {{ $file->revision->entry->periodLabel() }}</p><p class="mt-2 text-xs text-slate-400">Uploaded by {{ $file->user->name }} on {{ $file->created_at->format('d M Y') }}</p><div class="mt-3 flex gap-3 text-xs font-semibold">@if(str_starts_with($file->mime_type, 'image/') || $file->mime_type === 'application/pdf')<a class="text-brand-700" href="{{ route('evidence.preview', $file) }}" target="_blank">Preview</a>@endif<a class="text-brand-700" href="{{ route('evidence.download', $file) }}">Download</a></div></article>
                 @empty<p class="py-8 text-sm text-slate-500">No evidence files match this programme, project, and reporting period.</p>@endforelse
             </div>
             <div class="mt-6">{{ $evidence->links() }}</div>

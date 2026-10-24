@@ -9,7 +9,15 @@ class EntryRevision extends ImpactModel
 {
     protected function casts(): array
     {
-        return parent::casts() + ['json_value' => 'array', 'date_value' => 'date', 'boolean_value' => 'boolean', 'submitted_at' => 'datetime', 'approved_at' => 'datetime'];
+        return parent::casts() + [
+            'json_value' => 'array',
+            'date_value' => 'date',
+            'boolean_value' => 'boolean',
+            'variance_percentage' => 'float',
+            'variance_flagged' => 'boolean',
+            'submitted_at' => 'datetime',
+            'approved_at' => 'datetime',
+        ];
     }
 
     public function entry(): BelongsTo

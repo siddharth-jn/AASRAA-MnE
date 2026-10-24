@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $title ?? 'AASRAA Monitoring & Evaluation' }}</title>
+    <title>{{ $title ?? 'AASRAA MnE' }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body x-data="{ navOpen: false }">
@@ -13,7 +13,7 @@
 
         <aside :class="navOpen ? 'translate-x-0' : '-translate-x-full'" class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-200 bg-white transition lg:translate-x-0">
             <a href="{{ route('dashboard') }}" aria-label="Go to main dashboard" class="border-b border-slate-200 px-5 py-4 hover:bg-slate-50">
-                <img src="{{ asset('images/ame-brand.svg') }}" alt="AASRAA Monitoring and Evaluation" class="h-12 w-auto max-w-full">
+                <img src="{{ asset('images/mne-brand.svg') }}" alt="AASRAA MnE — Monitoring and Evaluation" class="h-12 w-auto max-w-full">
             </a>
 
             <nav class="flex-1 space-y-1 overflow-y-auto p-3 text-sm">
@@ -27,6 +27,9 @@
                     <a href="{{ route('approvals.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('approvals.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">✓</span>Approvals</a>
                 @endcan
                 <a href="{{ route('reports.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('reports.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">▤</span>Reports</a>
+                @can('executive-dashboard')
+                    <a href="{{ route('executive.dashboard') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('executive.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">◫</span>Executive overview</a>
+                @endcan
                 @can('quality')
                     <a href="{{ route('data-quality.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('data-quality.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">◇</span>Data Quality</a>
                 @endcan
@@ -69,7 +72,7 @@
 
                     <div x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false" @keydown.escape.window="open = false" class="relative">
                         <button @click="open = ! open" :aria-expanded="open" aria-haspopup="menu" aria-label="Open account menu" class="grid h-10 w-10 place-items-center overflow-hidden rounded-full ring-2 ring-transparent transition hover:ring-brand-200 focus:outline-none focus:ring-brand-300">
-                            <img src="{{ asset('images/ame-mark.svg') }}" alt="AME" class="h-full w-full">
+                            <img src="{{ asset('images/mne-mark.svg') }}" alt="MnE" class="h-full w-full">
                         </button>
                         <div x-cloak x-show="open" x-transition.origin.top.right @click.outside="open = false" role="menu" class="absolute right-0 top-full z-50 w-64 pt-2">
                             <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">

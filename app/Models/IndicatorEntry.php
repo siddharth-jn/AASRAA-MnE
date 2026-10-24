@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\IndicatorReportingPeriodService;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -30,5 +31,12 @@ class IndicatorEntry extends ImpactModel
     public function revisions(): HasMany
     {
         return $this->hasMany(EntryRevision::class);
+    }
+
+    public function periodLabel(): string
+    {
+        $indicator = $this->assignment->indicator;
+
+        return app(IndicatorReportingPeriodService::class)->label($this->period, $indicator->frequency);
     }
 }

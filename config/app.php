@@ -13,7 +13,7 @@ return [
     |
     */
 
-    'name' => env('APP_NAME', 'AASRAA Monitoring & Evaluation'),
+    'name' => env('APP_NAME', 'AASRAA MnE'),
 
     /*
     |--------------------------------------------------------------------------

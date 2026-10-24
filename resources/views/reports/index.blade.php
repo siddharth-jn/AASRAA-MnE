@@ -11,6 +11,33 @@
             </select>
         </div>
         <div>
+            <label for="indicator">Indicator</label>
+            <select id="indicator" name="indicator" class="mt-1 w-full">
+                <option value="">All indicators</option>
+                @foreach($indicators as $indicator)
+                    <option value="{{ $indicator->id }}" @selected($selectedIndicatorId === $indicator->id)>{{ $indicator->name }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label for="category">Indicator category</label>
+            <select id="category" name="category" class="mt-1 w-full">
+                <option value="">All categories</option>
+                @foreach($categories as $category)
+                    <option value="{{ $category }}" @selected($selectedCategory === $category)>{{ $category }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
+            <label for="donor">Donor</label>
+            <select id="donor" name="donor" class="mt-1 w-full">
+                <option value="">All donors</option>
+                @foreach($donors as $donor)
+                    <option value="{{ $donor }}" @selected($selectedDonor === $donor)>{{ $donor }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div>
             <label for="centre">Project</label>
             <select id="centre" name="centre" class="mt-1 w-full">
                 <option value="">{{ $selectedProjectId ? 'All programme projects' : 'All projects' }}</option>
@@ -40,28 +67,31 @@
         <div>
             <h2 class="text-xl font-bold text-ink">Approved performance report</h2>
             <p class="text-sm text-slate-500">{{ $period['start']->format('d M Y') }} to {{ $period['end']->format('d M Y') }} · {{ $projects->firstWhere('id', $selectedProjectId)?->name ?? 'All programmes' }} · {{ $centres->firstWhere('id', $selectedCentreId)?->name ?? 'All projects' }} · generated {{ now()->format('d M Y, H:i') }}</p>
+            <p class="mt-1 text-xs text-slate-500">{{ $selectedCentreId ? 'Showing the selected project’s approved results.' : 'Showing one result per indicator, combined across the accessible projects within each programme.' }}</p>
         </div>
         <button onclick="window.print()" class="no-print btn-secondary">Print report</button>
     </div>
 
     <div class="table-wrap">
         <table class="data-table">
-            <thead><tr><th>Programme / project</th><th>Indicator</th><th>Target</th><th>Achievement</th><th>Variance</th><th>Achievement</th><th>Trend</th><th>Performance</th><th>Approval</th></tr></thead>
+            <thead><tr><th class="sticky-col">Programme / project</th><th>Donor</th><th>Indicator</th><th>Target</th><th>Achievement</th><th>Difference</th><th>Variance %</th><th>Variance explanation</th><th>Trend</th><th>Performance</th><th>Approval</th></tr></thead>
             <tbody class="divide-y divide-slate-100">
                 @forelse($rows as $row)
                     <tr>
-                        <td><p class="font-semibold text-slate-800">{{ $row['project']->name }}</p><p class="text-xs text-slate-500">{{ $row['centre']->name }}</p></td>
-                        <td><p class="font-semibold text-slate-800">{{ $row['indicator']->name }}</p><p class="text-xs text-slate-500">{{ $row['indicator']->category }}</p></td>
+                        <td class="sticky-col"><p class="font-semibold text-slate-800">{{ $row['project']->name }}</p><p class="text-xs text-slate-500">{{ $row['centre']?->name ?? 'All projects ('.$row['centre_count'].')' }}</p></td>
+                        <td>{{ $row['centre']?->source_donor_name ?? ($row['donor_display'] ?? 'Not specified') }}</td>
+                        <td><p class="font-semibold text-slate-800">{{ $row['indicator']->name }}</p><p class="text-xs text-slate-500">{{ $row['indicator']->category }} · {{ $row['indicator']->time_aggregation }} over time{{ $row['centre'] === null ? ' · '.($row['across_project_method'] === 'NON-AGGREGATABLE' ? 'Do not combine' : ($row['across_project_method'].' across projects')) : '' }}</p></td>
                         <td>{{ $row['target_display'] }} {{ $row['target'] !== null ? $row['indicator']->unit : '' }}</td>
-                        <td class="font-semibold">{{ is_array($row['achievement']) ? collect($row['achievement'])->map(fn ($count, $status) => "$status: $count")->join(', ') : ($row['achievement'] === null ? 'Not aggregatable' : number_format($row['achievement'], $row['indicator']->precision)) }} {{ is_numeric($row['achievement']) ? $row['indicator']->unit : '' }}</td>
+                        <td class="font-semibold">{{ is_array($row['achievement']) ? (collect($row['achievement'])->map(fn ($count, $status) => "$status: $count")->join(', ') ?: 'No approved result') : ($row['achievement'] === null ? ($row['centre'] === null && $row['across_project_method'] === 'NON-AGGREGATABLE' ? 'Select a project' : 'No combined value') : number_format($row['achievement'], $row['indicator']->precision)) }} {{ is_numeric($row['achievement']) ? $row['indicator']->unit : '' }}</td>
                         <td>{{ $row['variance'] === null ? '—' : number_format($row['variance'], $row['indicator']->precision) }}</td>
-                        <td>{{ $row['achievement_percentage'] === null ? '—' : number_format($row['achievement_percentage'], 1).'%' }}</td>
+                        <td>{{ $row['achievement_percentage'] === null ? 'N/A' : (($row['achievement_percentage'] > 0 ? '+' : '').number_format($row['achievement_percentage'], 1).'%') }}</td>
+                        <td class="min-w-64 text-sm">{{ $row['variance_explanations']->join(' · ') ?: '—' }}</td>
                         <td class="text-xs text-slate-500">{{ $row['trend']->pluck('value')->filter(fn ($value) => $value !== null)->map(fn ($value) => number_format($value, $row['indicator']->precision))->join(' → ') ?: '—' }}</td>
                         <td><span class="badge {{ $row['performance_status'] === 'Met' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-700' }}">{{ $row['performance_status'] }}</span></td>
                         <td><span class="badge bg-emerald-100 text-emerald-700">{{ $row['status'] }}</span></td>
                     </tr>
                 @empty
-                    <tr><td colspan="9" class="py-12 text-center text-slate-500">No approved records match this reporting period.</td></tr>
+                    <tr><td colspan="11" class="py-12 text-center text-slate-500">No final-approved records match this reporting period.</td></tr>
                 @endforelse
             </tbody>
         </table>

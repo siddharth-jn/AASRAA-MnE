@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 64" role="img" aria-labelledby="title description">
+  <title id="title">AASRAA MnE</title>
+  <desc id="description">AASRAA Monitoring and Evaluation brand</desc>
+  <rect width="64" height="64" rx="18" fill="#0f766e"/>
+  <text x="32" y="39" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" text-anchor="middle">MnE</text>
+  <text x="82" y="27" fill="#172033" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">AASRAA MnE</text>
+  <text x="82" y="50" fill="#64748b" font-family="Arial, Helvetica, sans-serif" font-size="17">Monitoring &amp; Evaluation</text>
+</svg>

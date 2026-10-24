@@ -14,33 +14,89 @@ class CentresTable
     {
         return $table
             ->columns([
-                TextColumn::make('code')
-                    ->label('Project code')
-                    ->searchable(),
-                TextColumn::make('name')
-                    ->label('Project name')
-                    ->searchable(),
-                TextColumn::make('type')
-                    ->label('Project type')
-                    ->searchable(),
-                TextColumn::make('region')
-                    ->searchable(),
-                TextColumn::make('capacity')
-                    ->label('Capacity')
+                TextColumn::make('source_project_id')
+                    ->label('Project ID')
                     ->numeric()
                     ->sortable(),
-                TextColumn::make('projects_count')
-                    ->label('Programmes')
-                    ->counts('projects')
+                TextColumn::make('code')
+                    ->label('Project code')
+                    ->searchable()
+                    ->copyable(),
+                TextColumn::make('name')
+                    ->label('Project name')
+                    ->searchable()
+                    ->wrap(),
+                TextColumn::make('source_program')
+                    ->label('Programme')
+                    ->searchable()
                     ->sortable(),
-                TextColumn::make('source_url')
+                TextColumn::make('source_timing_slot')
+                    ->label('Timing slot')
+                    ->placeholder('—')
                     ->searchable(),
+                TextColumn::make('source_donor_name')
+                    ->label('Donor')
+                    ->placeholder('—')
+                    ->searchable(),
+                TextColumn::make('source_description')
+                    ->label('Description')
+                    ->placeholder('—')
+                    ->limit(60)
+                    ->wrap(),
+                TextColumn::make('source_status')
+                    ->label('Status')
+                    ->badge()
+                    ->color(fn (?string $state): string => $state === 'Active' ? 'success' : 'gray')
+                    ->sortable(),
+                TextColumn::make('source_synced_at')
+                    ->label('Last synchronized')
+                    ->dateTime()
+                    ->sortable(),
+                TextColumn::make('source_location')
+                    ->label('Source location')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('source_started_date')
+                    ->label('Start date')
+                    ->date()
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('source_poc_name')
+                    ->label('POC name')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('source_poc_contact')
+                    ->label('POC contact')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('source_poc_designation')
+                    ->label('POC designation')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('source_address')
+                    ->label('Address')
+                    ->placeholder('—')
+                    ->limit(60)
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('source_budget_head')
+                    ->label('Budget head')
+                    ->placeholder('—')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('type')
+                    ->label('Local project type')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('region')
+                    ->label('Local region')
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('capacity')
+                    ->numeric()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('projects_count')
+                    ->label('Programme links')
+                    ->counts('projects')
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('provenance')
-                    ->searchable(),
-                IconColumn::make('active')
-                    ->boolean(),
-                IconColumn::make('is_demo')
-                    ->boolean(),
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -52,6 +108,13 @@ class CentresTable
                 TextColumn::make('deleted_at')
                     ->dateTime()
                     ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                IconColumn::make('active')
+                    ->label('Locally active')
+                    ->boolean()
+                    ->toggleable(isToggledHiddenByDefault: true),
+                IconColumn::make('is_demo')
+                    ->boolean()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([

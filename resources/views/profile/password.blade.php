@@ -1,4 +1,4 @@
-<x-layouts.app title="Change password · AASRAA Monitoring & Evaluation" heading="Change password">
+<x-layouts.app title="Change password · AASRAA MnE" heading="Change password">
 <div class="mx-auto max-w-2xl"><div class="card p-6 md:p-8"><h2 class="text-lg font-bold text-ink">Secure your account</h2><p class="mt-1 text-sm text-slate-500">Changing your password closes your other active sessions.</p>
 <form method="POST" action="{{ route('password.change') }}" class="mt-6 space-y-5">@csrf @method('PATCH')
 <div><label for="current_password">Current password</label><input id="current_password" name="current_password" type="password" autocomplete="current-password" class="mt-1 w-full" required></div>

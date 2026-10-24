@@ -7,7 +7,9 @@ use App\Models\IndicatorAssignment;
 use App\Models\IndicatorEntry;
 use App\Models\User;
 use App\Notifications\WorkflowNotification;
+use App\Support\WorkflowStatus;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -15,64 +17,115 @@ use Illuminate\Validation\ValidationException;
 
 class EntryService
 {
+    public function __construct(
+        private readonly TargetService $targets,
+        private readonly VarianceService $variances,
+        private readonly IndicatorReportingPeriodService $periods,
+    ) {}
+
     /** @param array<string, mixed> $data @param array<int, UploadedFile> $files */
     public function save(User $user, IndicatorAssignment $assignment, string $period, array $data, array $files, bool $submit): IndicatorEntry
     {
         $definition = $assignment->loadMissing('indicator')->indicator;
-        $normalizedPeriod = CarbonImmutable::parse($period)->startOfMonth();
-        if (! $definition->isEffectiveForPeriod($normalizedPeriod)) {
+        $requestedPeriod = CarbonImmutable::parse($period)->startOfMonth();
+        [$normalizedPeriod, $periodEnd] = $this->periods->boundaries($requestedPeriod, $definition->frequency);
+        if (! $this->periods->isAvailable($definition, $requestedPeriod)) {
             throw ValidationException::withMessages([
                 'period' => 'Reporting for this indicator starts in '.$definition->effective_date->format('F Y').'.',
             ]);
         }
 
-        $entry = DB::transaction(function () use ($user, $assignment, $normalizedPeriod, $definition, $data, $files, $submit): IndicatorEntry {
-            $entry = IndicatorEntry::query()
-                ->where('indicator_assignment_id', $assignment->id)
-                ->whereDate('period', $normalizedPeriod->toDateString())
-                ->lockForUpdate()
-                ->first();
-            if (! $entry) {
-                $entry = IndicatorEntry::create([
-                    'indicator_assignment_id' => $assignment->id,
-                    'period' => $normalizedPeriod->toDateString(),
-                    'status' => 'DRAFT',
+        $target = $this->targets->findForPeriod($assignment->id, $normalizedPeriod);
+        $variance = $this->variances->evaluate($definition, $target, $data);
+        if ($submit && $variance['flagged'] && blank($data['variance_explanation'] ?? null)) {
+            throw ValidationException::withMessages([
+                'variance_explanation' => 'Explain this variance before submitting because it is at least 10% from target or outside the expected target.',
+            ]);
+        }
+
+        try {
+            $entry = DB::transaction(function () use ($user, $assignment, $normalizedPeriod, $periodEnd, $definition, $data, $files, $submit, $variance): IndicatorEntry {
+                $matchingEntries = IndicatorEntry::query()
+                    ->where('indicator_assignment_id', $assignment->id)
+                    ->whereBetween('period', [$normalizedPeriod, $periodEnd])
+                    ->lockForUpdate()
+                    ->get();
+                if ($matchingEntries->count() > 1) {
+                    throw ValidationException::withMessages([
+                        'entry' => 'More than one legacy record exists in this reporting period. Ask an administrator to consolidate those records before continuing.',
+                    ]);
+                }
+                $entry = $matchingEntries->first();
+                if (! $entry) {
+                    $entry = IndicatorEntry::create([
+                        'indicator_assignment_id' => $assignment->id,
+                        'period' => $normalizedPeriod->toDateString(),
+                        'status' => 'DRAFT',
+                        'is_demo' => false,
+                    ]);
+                } elseif (! $entry->period->isSameDay($normalizedPeriod)) {
+                    $entry->update(['period' => $normalizedPeriod->toDateString()]);
+                }
+                if (in_array($entry->status, WorkflowStatus::pending(), true)) {
+                    throw ValidationException::withMessages(['entry' => 'This record is awaiting review and cannot be edited.']);
+                }
+                if ($entry->status === WorkflowStatus::FinalApproved) {
+                    throw ValidationException::withMessages(['entry' => 'This record is final approved. Request an amendment before changing it.']);
+                }
+                if ($entry->currentRevision && $entry->currentRevision->user_id !== $user->id && $user->role !== 'ADMIN') {
+                    throw ValidationException::withMessages(['entry' => 'Only the person who created this entry can correct its draft or returned revision.']);
+                }
+                $existingEvidenceCount = $entry->currentRevision?->evidence()->count() ?? 0;
+                $minimumEvidenceCount = max(1, $definition->min_files);
+                if ($submit && $definition->evidence_required && ($existingEvidenceCount + count($files)) < $minimumEvidenceCount) {
+                    throw ValidationException::withMessages(['evidence' => "At least {$minimumEvidenceCount} supporting file(s) are required before submission."]);
+                }
+                $status = $submit
+                    ? ($definition->approval_required ? WorkflowStatus::PendingSeniorProgrammeLead : WorkflowStatus::FinalApproved)
+                    : WorkflowStatus::Draft;
+                $revision = $entry->revisions()->create([
+                    'indicator_definition_version_id' => $definition->versions()->latest('version')->value('id'), 'user_id' => $user->id,
+                    'version' => ($entry->revisions()->max('version') ?? 0) + 1, 'status' => $status,
+                    'value_state' => $data['value_state'] ?? 'reported', 'numeric_value' => $data['numeric_value'] ?? null,
+                    'numerator' => $data['numerator'] ?? null, 'denominator' => $data['denominator'] ?? null,
+                    'text_value' => $data['text_value'] ?? null, 'date_value' => $data['date_value'] ?? null,
+                    'boolean_value' => $data['boolean_value'] ?? null, 'json_value' => $data['json_value'] ?? null,
+                    'notes' => $data['notes'] ?? null,
+                    'variance_percentage' => $variance['percentage'],
+                    'variance_flagged' => $variance['flagged'],
+                    'variance_explanation' => $data['variance_explanation'] ?? null,
+                    'submitted_at' => $submit ? now() : null,
+                    'approved_at' => $status === WorkflowStatus::FinalApproved ? now() : null,
                     'is_demo' => false,
                 ]);
-            }
-            if ($entry->status === 'SUBMITTED') {
-                throw ValidationException::withMessages(['entry' => 'This record is awaiting review.']);
-            }
-            $existingEvidenceCount = $entry->currentRevision?->evidence()->count() ?? 0;
-            $minimumEvidenceCount = max(1, $definition->min_files);
-            if ($submit && $definition->evidence_required && ($existingEvidenceCount + count($files)) < $minimumEvidenceCount) {
-                throw ValidationException::withMessages(['evidence' => "At least {$minimumEvidenceCount} supporting file(s) are required before submission."]);
-            }
-            $status = $submit ? ($definition->approval_required ? 'SUBMITTED' : 'APPROVED') : 'DRAFT';
-            $revision = $entry->revisions()->create([
-                'indicator_definition_version_id' => $definition->versions()->latest('version')->value('id'), 'user_id' => $user->id,
-                'version' => ($entry->revisions()->max('version') ?? 0) + 1, 'status' => $status,
-                'value_state' => $data['value_state'] ?? 'reported', 'numeric_value' => $data['numeric_value'] ?? null,
-                'numerator' => $data['numerator'] ?? null, 'denominator' => $data['denominator'] ?? null,
-                'text_value' => $data['text_value'] ?? null, 'date_value' => $data['date_value'] ?? null,
-                'boolean_value' => $data['boolean_value'] ?? null, 'json_value' => $data['json_value'] ?? null,
-                'notes' => $data['notes'] ?? null, 'submitted_at' => $submit ? now() : null,
-                'approved_at' => $status === 'APPROVED' ? now() : null, 'is_demo' => false,
-            ]);
-            foreach ($files as $file) {
-                $revision->evidence()->create(['user_id' => $user->id, 'path' => $file->store("evidence/{$entry->id}", 'local'), 'original_name' => $file->getClientOriginalName(), 'mime_type' => $file->getMimeType() ?: 'application/octet-stream', 'size' => $file->getSize(), 'is_demo' => false]);
-            }
-            $entry->update([
-                'current_revision_id' => $revision->id,
-                'approved_revision_id' => $status === 'APPROVED' ? $revision->id : $entry->approved_revision_id,
-                'status' => $revision->status,
-            ]);
+                $evidenceDisk = (string) config('impact.evidence_disk', 'local');
+                foreach ($files as $file) {
+                    $revision->evidence()->create([
+                        'user_id' => $user->id,
+                        'disk' => $evidenceDisk,
+                        'path' => $file->store("evidence/{$entry->id}", $evidenceDisk),
+                        'original_name' => $file->getClientOriginalName(),
+                        'mime_type' => $file->getMimeType() ?: 'application/octet-stream',
+                        'size' => $file->getSize(),
+                        'is_demo' => false,
+                    ]);
+                }
+                $entry->update([
+                    'current_revision_id' => $revision->id,
+                    'approved_revision_id' => $status === WorkflowStatus::FinalApproved ? $revision->id : $entry->approved_revision_id,
+                    'status' => $revision->status,
+                ]);
 
-            return $entry->fresh(['assignment.indicator', 'currentRevision.evidence']);
-        });
+                return $entry->fresh(['assignment.indicator', 'currentRevision.evidence']);
+            });
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages([
+                'entry' => 'Another user created this reporting record at the same time. Reload the page to see the existing entry.',
+            ]);
+        }
 
-        if ($submit && $entry->status === 'SUBMITTED') {
-            $this->reviewersFor($entry)->each(fn (User $reviewer) => $reviewer->notify(new WorkflowNotification(
+        if ($submit && $entry->status === WorkflowStatus::PendingSeniorProgrammeLead) {
+            $this->reviewersFor($entry, WorkflowStatus::PendingSeniorProgrammeLead)->each(fn (User $reviewer) => $reviewer->notify(new WorkflowNotification(
                 'Submission requires approval',
                 "{$entry->assignment->indicator->name} was submitted for {$entry->assignment->centre->name}.",
                 route('approvals.index'),
@@ -88,8 +141,13 @@ class EntryService
         $entry = DB::transaction(function () use ($reviewer, $entry, $action, $comment): IndicatorEntry {
             $entry = IndicatorEntry::query()->lockForUpdate()->findOrFail($entry->id);
             $revision = $entry->currentRevision;
-            if ($entry->status !== 'SUBMITTED' || ! $revision) {
+            if (! in_array($entry->status, WorkflowStatus::pending(), true) || ! $revision) {
                 throw ValidationException::withMessages(['entry' => 'This submission is no longer pending.']);
+            }
+            $stage = $entry->status === WorkflowStatus::PendingSeniorProgrammeLead ? 'SENIOR PROGRAM LEAD' : 'M&E HEAD';
+            $allowedRoles = $stage === 'SENIOR PROGRAM LEAD' ? ['ADMIN', 'SENIOR PROGRAM LEAD'] : ['ADMIN', 'M&E HEAD'];
+            if (! in_array($reviewer->role, $allowedRoles, true)) {
+                throw ValidationException::withMessages(['entry' => 'This submission is pending review at a different stage.']);
             }
             if ($revision->user_id === $reviewer->id) {
                 throw ValidationException::withMessages(['entry' => 'You cannot approve your own submission.']);
@@ -98,11 +156,14 @@ class EntryService
                 throw ValidationException::withMessages(['comment' => 'A review comment is required.']);
             }
             $status = match ($action) {
-                'APPROVED' => 'APPROVED', 'RETURNED' => 'RETURNED FOR CORRECTION', 'REJECTED' => 'REJECTED', default => throw ValidationException::withMessages(['action' => 'Invalid review action.'])
+                'APPROVED' => $stage === 'SENIOR PROGRAM LEAD' ? WorkflowStatus::PendingMneHead : WorkflowStatus::FinalApproved,
+                'RETURNED' => WorkflowStatus::ReturnedForCorrection,
+                'REJECTED' => WorkflowStatus::Rejected,
+                default => throw ValidationException::withMessages(['action' => 'Invalid review action.']),
             };
-            $revision->update(['status' => $status, 'approved_at' => $status === 'APPROVED' ? now() : null]);
-            ApprovalAction::create(['entry_revision_id' => $revision->id, 'user_id' => $reviewer->id, 'action' => $status, 'comment' => $comment, 'is_demo' => false]);
-            $entry->update(['status' => $status, 'approved_revision_id' => $status === 'APPROVED' ? $revision->id : $entry->approved_revision_id]);
+            $revision->update(['status' => $status, 'approved_at' => $status === WorkflowStatus::FinalApproved ? now() : null]);
+            ApprovalAction::create(['entry_revision_id' => $revision->id, 'user_id' => $reviewer->id, 'stage' => $stage, 'action' => $status, 'comment' => $comment, 'is_demo' => false]);
+            $entry->update(['status' => $status, 'approved_revision_id' => $status === WorkflowStatus::FinalApproved ? $revision->id : $entry->approved_revision_id]);
 
             return $entry->fresh();
         });
@@ -112,27 +173,102 @@ class EntryService
         $submitter->notify(new WorkflowNotification(
             "Submission {$entry->status}",
             trim("{$entry->assignment->indicator->name} for {$entry->assignment->centre->name} is now {$entry->status}. ".($comment ?: '')),
-            route('entries.edit', ['assignment' => $entry->indicator_assignment_id, 'period' => $entry->period->format('Y-m')]),
-            strtolower(str_replace(' ', '_', $entry->status)),
+            route('entries.edit', [
+                'assignment' => $entry->indicator_assignment_id,
+                'period' => $entry->period->format('Y-m'),
+                'period_type' => $entry->assignment->indicator->frequency,
+            ]),
+            strtolower(str_replace([' ', '&'], ['_', 'and'], $entry->status)),
         ));
+
+        if ($entry->status === WorkflowStatus::PendingMneHead) {
+            $this->reviewersFor($entry, WorkflowStatus::PendingMneHead)->each(fn (User $nextReviewer) => $nextReviewer->notify(new WorkflowNotification(
+                'Submission requires final M&E approval',
+                "{$entry->assignment->indicator->name} passed Senior Programme Lead review for {$entry->assignment->centre->name}.",
+                route('approvals.index'),
+                'mne_approval_required',
+            )));
+        }
+
+        if ($entry->status === WorkflowStatus::FinalApproved) {
+            User::query()->where('active', true)->whereIn('role', ['CEO', 'CFO'])->each(fn (User $executive) => $executive->notify(new WorkflowNotification(
+                'Result final approved',
+                "{$entry->assignment->indicator->name} was final approved for {$entry->assignment->centre->name}.",
+                route('executive.dashboard'),
+                'final_approved',
+            )));
+        }
 
         return $entry;
     }
 
+    public function requestAmendment(User $user, IndicatorEntry $entry, string $reason): IndicatorEntry
+    {
+        return DB::transaction(function () use ($user, $entry, $reason): IndicatorEntry {
+            $entry = IndicatorEntry::query()->lockForUpdate()->findOrFail($entry->id);
+            if ($entry->status !== WorkflowStatus::FinalApproved || ! $entry->approvedRevision) {
+                throw ValidationException::withMessages(['entry' => 'Only a final-approved entry can begin an amendment.']);
+            }
+
+            $approved = $entry->approvedRevision;
+            $revision = $entry->revisions()->create([
+                'indicator_definition_version_id' => $approved->indicator_definition_version_id,
+                'user_id' => $user->id,
+                'version' => ($entry->revisions()->max('version') ?? 0) + 1,
+                'status' => WorkflowStatus::Draft,
+                'value_state' => $approved->value_state,
+                'numeric_value' => $approved->numeric_value,
+                'numerator' => $approved->numerator,
+                'denominator' => $approved->denominator,
+                'weight' => $approved->weight,
+                'text_value' => $approved->text_value,
+                'date_value' => $approved->date_value,
+                'boolean_value' => $approved->boolean_value,
+                'json_value' => $approved->json_value,
+                'notes' => 'Amendment requested: '.$reason,
+                'variance_percentage' => $approved->variance_percentage,
+                'variance_flagged' => $approved->variance_flagged,
+                'variance_explanation' => $approved->variance_explanation,
+                'is_demo' => false,
+            ]);
+            foreach ($approved->evidence as $file) {
+                $revision->evidence()->create([
+                    'user_id' => $user->id,
+                    'disk' => $file->disk,
+                    'path' => $file->path,
+                    'original_name' => $file->original_name,
+                    'mime_type' => $file->mime_type,
+                    'size' => $file->size,
+                    'is_demo' => false,
+                ]);
+            }
+            $entry->update([
+                'current_revision_id' => $revision->id,
+                'status' => WorkflowStatus::Draft,
+            ]);
+
+            return $entry->fresh(['currentRevision.evidence', 'approvedRevision']);
+        });
+    }
+
     /** @return Collection<int, User> */
-    private function reviewersFor(IndicatorEntry $entry): Collection
+    private function reviewersFor(IndicatorEntry $entry, string $status): Collection
     {
         $entry->loadMissing('assignment.indicator');
         $projectId = $entry->assignment->indicator->project_id;
 
+        $roles = $status === WorkflowStatus::PendingSeniorProgrammeLead
+            ? ['ADMIN', 'SENIOR PROGRAM LEAD']
+            : ['ADMIN', 'M&E HEAD'];
+
         return User::query()
             ->where('active', true)
-            ->whereIn('role', ['ADMIN', 'SENIOR PROGRAM LEAD'])
+            ->whereIn('role', $roles)
             ->whereKeyNot($entry->currentRevision->user_id)
-            ->where(function ($query) use ($projectId): void {
-                $query->where('role', 'ADMIN')
+            ->when($status === WorkflowStatus::PendingSeniorProgrammeLead, fn ($query) => $query->where(function ($scopeQuery) use ($projectId): void {
+                $scopeQuery->where('role', 'ADMIN')
                     ->orWhereHas('projects', fn ($projectQuery) => $projectQuery->whereKey($projectId));
-            })
+            }))
             ->get();
     }
 }

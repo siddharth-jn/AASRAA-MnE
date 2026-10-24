@@ -11,6 +11,7 @@ use App\Models\Programme;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\EntryService;
+use App\Support\WorkflowStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -46,8 +47,8 @@ class ImpactTest extends TestCase
         $indicator = IndicatorDefinition::create(['project_id' => $project->id, 'code' => 'TEST-I', 'name' => 'Sessions', 'description' => 'Test', 'category' => 'Activity', 'unit' => 'sessions', 'data_type' => 'integer', 'frequency' => 'monthly', 'time_aggregation' => 'SUM', 'centre_aggregation' => 'SUM', 'min_value' => 0, 'active' => true]);
         $version = $indicator->versions()->firstOrCreate(['version' => 1], ['definition' => $indicator->attributesToArray()]);
         $assignment = IndicatorAssignment::create(['indicator_definition_id' => $indicator->id, 'centre_id' => $centre->id]);
-        $entry = IndicatorEntry::create(['indicator_assignment_id' => $assignment->id, 'period' => '2026-09-01', 'status' => 'SUBMITTED']);
-        $revision = EntryRevision::create(['indicator_entry_id' => $entry->id, 'indicator_definition_version_id' => $version->id, 'user_id' => $user->id, 'version' => 1, 'status' => 'SUBMITTED', 'numeric_value' => 18, 'submitted_at' => now()]);
+        $entry = IndicatorEntry::create(['indicator_assignment_id' => $assignment->id, 'period' => '2026-09-01', 'status' => WorkflowStatus::PendingSeniorProgrammeLead]);
+        $revision = EntryRevision::create(['indicator_entry_id' => $entry->id, 'indicator_definition_version_id' => $version->id, 'user_id' => $user->id, 'version' => 1, 'status' => WorkflowStatus::PendingSeniorProgrammeLead, 'numeric_value' => 18, 'submitted_at' => now()]);
         $entry->update(['current_revision_id' => $revision->id]);
 
         $this->expectException(ValidationException::class);

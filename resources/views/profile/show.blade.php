@@ -1,9 +1,9 @@
-<x-layouts.app title="My profile · AASRAA Monitoring & Evaluation" heading="My profile">
+<x-layouts.app title="My profile · AASRAA MnE" heading="My profile">
     <div class="mx-auto max-w-5xl space-y-6">
         <section class="card p-6 md:p-8">
             <div class="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                 <div class="flex items-center gap-4">
-                    <img src="{{ asset('images/ame-mark.svg') }}" alt="AME" class="h-16 w-16 rounded-2xl">
+                    <img src="{{ asset('images/mne-mark.svg') }}" alt="MnE" class="h-16 w-16 rounded-2xl">
                     <div>
                         <h2 class="text-xl font-bold text-ink">{{ $user->name }}</h2>
                         <p class="text-sm text-slate-500">{{ $user->email }}</p>

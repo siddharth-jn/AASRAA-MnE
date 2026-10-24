@@ -11,6 +11,7 @@ use App\Services\CompletenessService;
 use App\Services\ReportingPeriodService;
 use App\Services\ReportingService;
 use App\Services\ScopeService;
+use App\Support\WorkflowStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -25,16 +26,21 @@ class PortalController extends Controller
             'stats' => [
                 'projects' => $scope->projects($request->user())->where('active', true)->count(),
                 'centres' => $scope->centres($request->user())->where('active', true)->count(),
-                'pending' => $scope->entries($request->user())->where('status', 'SUBMITTED')->count(),
+                'pending' => $scope->entries($request->user())->whereIn('status', WorkflowStatus::pending())->count(),
             ],
             'recentEntries' => $scope->entries($request->user())->with(['assignment.indicator.project', 'assignment.centre', 'currentRevision'])->latest('updated_at')->limit(8)->get(),
-            'recentApproved' => $scope->entries($request->user())->where('status', 'APPROVED')->with(['assignment.indicator.project', 'assignment.centre', 'approvedRevision'])->latest('updated_at')->limit(5)->get(),
+            'recentApproved' => $scope->entries($request->user())->where('status', WorkflowStatus::FinalApproved)->with(['assignment.indicator.project', 'assignment.centre', 'approvedRevision'])->latest('updated_at')->limit(5)->get(),
         ]);
     }
 
     public function projects(Request $request, ScopeService $scope): View
     {
-        return view('projects.index', ['projects' => $scope->projects($request->user())->withCount(['centres', 'indicators'])->paginate(12)]);
+        return view('projects.index', ['projects' => $scope->projects($request->user())->withCount([
+            'centres',
+            'indicators as activity_indicators_count' => fn (Builder $query): Builder => $query->where('active', true)->where('category', 'Activity'),
+            'indicators as output_indicators_count' => fn (Builder $query): Builder => $query->where('active', true)->where('category', 'Output'),
+            'indicators as outcome_indicators_count' => fn (Builder $query): Builder => $query->where('active', true)->where('category', 'Outcome'),
+        ])->paginate(12)]);
     }
 
     public function project(Request $request, Project $project, ScopeService $scope, CompletenessService $completeness, ReportingService $reports, ReportingPeriodService $periods): View
@@ -123,7 +129,11 @@ class PortalController extends Controller
                 ->get()
                 ->groupBy(fn (IndicatorTarget $target): int => $assignmentsById->get($target->indicator_assignment_id)->indicator_definition_id);
             $targetSummaries = $indicators->mapWithKeys(fn (IndicatorDefinition $indicator): array => [
-                $indicator->id => $reports->summarizeTargets($targetsByIndicator->get($indicator->id, collect()), $indicator),
+                $indicator->id => $reports->summarizeTargets(
+                    $targetsByIndicator->get($indicator->id, collect()),
+                    $indicator,
+                    $assignments->where('indicator_definition_id', $indicator->id)->count(),
+                ),
             ]);
         }
 

@@ -30,7 +30,7 @@ class User extends Authenticatable implements FilamentUser, HasAvatar
 
     public function getFilamentAvatarUrl(): ?string
     {
-        return asset('images/ame-mark.svg');
+        return asset('images/mne-mark.svg');
     }
 
     public function projects(): BelongsToMany

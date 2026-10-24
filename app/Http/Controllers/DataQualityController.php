@@ -7,6 +7,7 @@ use App\Models\Centre;
 use App\Models\IndicatorEntry;
 use App\Services\CompletenessService;
 use App\Services\ScopeService;
+use App\Support\WorkflowStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -23,7 +24,7 @@ class DataQualityController extends Controller
             ->whereDate('period', $period)
             ->with(['assignment.indicator', 'currentRevision.evidence'])
             ->get();
-        $requiredEvidence = $entries->filter(fn (IndicatorEntry $entry): bool => $entry->assignment->indicator->evidence_required && in_array($entry->status, ['SUBMITTED', 'APPROVED'], true));
+        $requiredEvidence = $entries->filter(fn (IndicatorEntry $entry): bool => $entry->assignment->indicator->evidence_required && in_array($entry->status, [...WorkflowStatus::pending(), WorkflowStatus::FinalApproved], true));
         $evidenceCompliant = $requiredEvidence->filter(fn (IndicatorEntry $entry): bool => $entry->currentRevision?->evidence->isNotEmpty())->count();
         $actions = ApprovalAction::query()
             ->whereHas('revision.entry', fn ($query) => $query->whereIn('indicator_entries.id', $entries->pluck('id')))
@@ -46,7 +47,7 @@ class DataQualityController extends Controller
                 'approval_turnaround' => $turnaround->isNotEmpty() ? round($turnaround->avg() / 60, 1) : null,
                 'on_time' => $submitted->count() ? round($onTime / $submitted->count() * 100, 1) : 100,
                 'returned' => $actions->count() ? round($actions->where('action', 'RETURNED FOR CORRECTION')->count() / $actions->count() * 100, 1) : 0,
-                'unapproved' => $entries->whereNotIn('status', ['APPROVED'])->count(),
+                'unapproved' => $entries->whereNotIn('status', [WorkflowStatus::FinalApproved])->count(),
             ],
             'centres' => $centreBreakdown,
         ]);

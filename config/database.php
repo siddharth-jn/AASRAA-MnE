@@ -64,6 +64,46 @@ return [
             ]) : [],
         ],
 
+        'mne_source' => [
+            'driver' => 'mariadb',
+            'host' => env('MNE_DB_HOST'),
+            'port' => env('MNE_DB_PORT', '3306'),
+            'database' => env('MNE_DB_DATABASE'),
+            'username' => env('MNE_DB_USERNAME'),
+            'password' => env('MNE_DB_PASSWORD'),
+            'unix_socket' => '',
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                Mysql::ATTR_SSL_CA => env('MNE_DB_SSL_CA'),
+                Mysql::ATTR_INIT_COMMAND => 'SET SESSION TRANSACTION READ ONLY',
+            ]) : [],
+        ],
+
+        'projects_source' => [
+            'driver' => 'mariadb',
+            'host' => env('PROJECTS_DB_HOST'),
+            'port' => env('PROJECTS_DB_PORT', '3306'),
+            'database' => env('PROJECTS_DB_DATABASE'),
+            'username' => env('PROJECTS_DB_USERNAME'),
+            'password' => env('PROJECTS_DB_PASSWORD'),
+            'unix_socket' => '',
+            'charset' => 'utf8mb4',
+            'collation' => 'utf8mb4_unicode_ci',
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                Mysql::ATTR_SSL_CA => env('PROJECTS_DB_SSL_CA'),
+                Mysql::ATTR_INIT_COMMAND => 'SET SESSION TRANSACTION READ ONLY',
+            ]) : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

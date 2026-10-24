@@ -2,10 +2,13 @@
 
 namespace App\Providers;
 
+use App\Database\ReadOnlySourceConnectionGuard;
 use App\Models\EvidenceFile;
 use App\Models\IndicatorEntry;
 use App\Models\User;
 use App\Services\ScopeService;
+use Illuminate\Database\Events\ConnectionEstablished;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -14,13 +17,19 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void {}
 
-    public function boot(): void
+    public function boot(ReadOnlySourceConnectionGuard $readOnlySourceConnectionGuard): void
     {
+        Event::listen(ConnectionEstablished::class, function (ConnectionEstablished $event) use ($readOnlySourceConnectionGuard): void {
+            $readOnlySourceConnectionGuard->protect($event->connection);
+        });
+
         Gate::define('configure', fn (User $u) => $u->active && $u->role === 'ADMIN');
-        Gate::define('submit', fn (User $u) => $u->active && in_array($u->role, ['ADMIN', 'PROGRAM LEAD', 'CENTRE COORDINATOR', 'SENIOR PROGRAM LEAD'], true));
-        Gate::define('review', fn (User $u) => $u->active && in_array($u->role, ['ADMIN', 'SENIOR PROGRAM LEAD'], true));
-        Gate::define('quality', fn (User $u) => $u->active && in_array($u->role, ['ADMIN', 'SENIOR PROGRAM LEAD', 'PROGRAM LEAD'], true));
-        Gate::define('import', fn (User $u) => $u->active && in_array($u->role, ['ADMIN', 'SENIOR PROGRAM LEAD', 'PROGRAM LEAD'], true));
+        Gate::define('submit', fn (User $u) => $u->active && in_array($u->role, ['ADMIN', 'ASSISTANT PROGRAM LEAD', 'PROGRAM LEAD', 'SENIOR PROGRAM LEAD', 'M&E HEAD', 'CENTRE COORDINATOR'], true));
+        Gate::define('review', fn (User $u) => $u->active && in_array($u->role, ['ADMIN', 'SENIOR PROGRAM LEAD', 'M&E HEAD'], true));
+        Gate::define('bulk-approve', fn (User $u) => $u->active && $u->role === 'M&E HEAD');
+        Gate::define('executive-dashboard', fn (User $u) => $u->active && in_array($u->role, ['ADMIN', 'M&E HEAD', 'CEO', 'CFO'], true));
+        Gate::define('quality', fn (User $u) => $u->active && in_array($u->role, ['ADMIN', 'SENIOR PROGRAM LEAD', 'PROGRAM LEAD', 'M&E HEAD'], true));
+        Gate::define('import', fn (User $u) => $u->active && in_array($u->role, ['ADMIN', 'SENIOR PROGRAM LEAD', 'PROGRAM LEAD', 'M&E HEAD'], true));
         Gate::define('view-entry', fn (User $u, IndicatorEntry $e) => app(ScopeService::class)->canAccess($u, $e));
         Gate::define('view-evidence', fn (User $u, EvidenceFile $f) => $u->role !== 'VIEWER' && app(ScopeService::class)->canAccess($u, $f->revision->entry));
         View::composer('components.layouts.app', function ($view): void {

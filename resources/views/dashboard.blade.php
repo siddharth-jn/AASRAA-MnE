@@ -29,7 +29,7 @@
             <div class="mb-5 flex items-center justify-between"><div><h2 class="font-bold text-ink">Recent submissions</h2><p class="text-sm text-slate-500">Latest activity across your assigned scope</p></div><a href="{{ route('entries.index') }}" class="text-sm font-semibold text-brand-700">View all</a></div>
             <div class="space-y-1">
                 @forelse($recentEntries as $entry)
-                    <a href="{{ route('entries.edit', ['assignment' => $entry->assignment, 'period' => $entry->period->format('Y-m')]) }}" class="flex items-center justify-between gap-4 rounded-lg p-3 hover:bg-slate-50"><div class="min-w-0"><p class="truncate text-sm font-semibold text-slate-800">{{ $entry->assignment->indicator->name }}</p><p class="truncate text-xs text-slate-500">{{ $entry->assignment->indicator->project->name }} · {{ $entry->assignment->centre->name }} · {{ $entry->period->format('M Y') }}</p></div><span class="badge {{ $entry->status === 'APPROVED' ? 'bg-emerald-100 text-emerald-700' : ($entry->status === 'SUBMITTED' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700') }}">{{ $entry->status }}</span></a>
+                    <a href="{{ route('entries.edit', ['assignment' => $entry->assignment, 'period' => $entry->period->format('Y-m'), 'period_type' => $entry->assignment->indicator->frequency]) }}" class="flex items-center justify-between gap-4 rounded-lg p-3 hover:bg-slate-50"><div class="min-w-0"><p class="truncate text-sm font-semibold text-slate-800">{{ $entry->assignment->indicator->name }}</p><p class="truncate text-xs text-slate-500">{{ $entry->assignment->indicator->project->name }} · {{ $entry->assignment->centre->name }} · {{ $entry->periodLabel() }}</p></div><span class="badge {{ $entry->status === \App\Support\WorkflowStatus::FinalApproved ? 'bg-emerald-100 text-emerald-700' : (in_array($entry->status, \App\Support\WorkflowStatus::pending(), true) ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700') }}">{{ \App\Support\WorkflowStatus::label($entry->status) }}</span></a>
                 @empty<p class="py-8 text-center text-sm text-slate-500">No submissions are available.</p>@endforelse
             </div>
         </section>
@@ -37,7 +37,7 @@
             <h2 class="font-bold text-ink">Recently approved</h2><p class="mb-5 text-sm text-slate-500">Results most recently added to official reporting</p>
             <div class="space-y-3">
                 @forelse($recentApproved as $entry)
-                    <div class="rounded-lg border border-slate-100 p-3"><p class="text-sm font-semibold text-slate-800">{{ $entry->assignment->indicator->name }} · {{ $entry->approvedRevision->displayValue() }}</p><p class="mt-1 text-xs text-slate-500">{{ $entry->assignment->indicator->project->name }} · {{ $entry->assignment->centre->name }} · {{ $entry->period->format('M Y') }}</p></div>
+                    <div class="rounded-lg border border-slate-100 p-3"><p class="text-sm font-semibold text-slate-800">{{ $entry->assignment->indicator->name }} · {{ $entry->approvedRevision->displayValue() }}</p><p class="mt-1 text-xs text-slate-500">{{ $entry->assignment->indicator->project->name }} · {{ $entry->assignment->centre->name }} · {{ $entry->periodLabel() }}</p></div>
                 @empty<p class="py-8 text-center text-sm text-slate-500">No approved results are available.</p>@endforelse
             </div>
         </section>

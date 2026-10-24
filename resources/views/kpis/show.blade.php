@@ -32,7 +32,7 @@
 
         <section class="card p-6">
             <h2 class="font-bold text-ink">Historical trend</h2>
-            @php($points = $entries->filter(fn ($entry) => $entry->approvedRevision?->numeric_value !== null)->map(fn ($entry) => ['label' => $entry->period->format('M y').' · '.$entry->assignment->centre->code, 'value' => (float) $entry->approvedRevision->numeric_value]))
+            @php($points = $entries->filter(fn ($entry) => $entry->approvedRevision?->numeric_value !== null)->map(fn ($entry) => ['label' => $entry->periodLabel().' · '.$entry->assignment->centre->code, 'value' => (float) $entry->approvedRevision->numeric_value]))
             @php($maximum = max(1, (float) $points->max('value')))
             <div class="mt-4 space-y-3">
                 @forelse($points as $point)
@@ -47,7 +47,7 @@
         <div class="mt-4 space-y-3">
             @forelse($entries->sortByDesc('period') as $entry)
                 <details class="rounded-lg border border-slate-200 p-4">
-                    <summary class="cursor-pointer"><span class="font-semibold text-slate-800">{{ $entry->period->format('F Y') }} · {{ $entry->assignment->centre->name }}</span> <span class="ml-2 badge bg-slate-100 text-slate-700">{{ $entry->status }}</span></summary>
+                    <summary class="cursor-pointer"><span class="font-semibold text-slate-800">{{ $entry->periodLabel() }} · {{ $entry->assignment->centre->name }}</span> <span class="ml-2 badge bg-slate-100 text-slate-700">{{ $entry->status }}</span></summary>
                     <div class="mt-3 space-y-3">
                         @foreach($entry->revisions->sortByDesc('version') as $revision)
                             <div class="rounded bg-slate-50 p-3 text-sm"><p><strong>Revision {{ $revision->version }}:</strong> {{ $revision->displayValue() }} · {{ $revision->user->name }}</p>@if($revision->notes)<p class="mt-1 text-slate-500">{{ $revision->notes }}</p>@endif

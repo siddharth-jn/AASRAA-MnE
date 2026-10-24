@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\IndicatorTargets;
 
-use App\Filament\Resources\IndicatorTargets\Pages\CreateIndicatorTarget;
 use App\Filament\Resources\IndicatorTargets\Pages\EditIndicatorTarget;
 use App\Filament\Resources\IndicatorTargets\Pages\ListIndicatorTargets;
+use App\Filament\Resources\IndicatorTargets\Pages\PlanIndicatorTargets;
 use App\Filament\Resources\IndicatorTargets\Schemas\IndicatorTargetForm;
 use App\Filament\Resources\IndicatorTargets\Tables\IndicatorTargetsTable;
 use App\Models\IndicatorTarget;
@@ -47,7 +47,7 @@ class IndicatorTargetResource extends Resource
     {
         return [
             'index' => ListIndicatorTargets::route('/'),
-            'create' => CreateIndicatorTarget::route('/create'),
+            'set' => PlanIndicatorTargets::route('/set'),
             'edit' => EditIndicatorTarget::route('/{record}/edit'),
         ];
     }

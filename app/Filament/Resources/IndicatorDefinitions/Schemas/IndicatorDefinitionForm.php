@@ -2,7 +2,8 @@
 
 namespace App\Filament\Resources\IndicatorDefinitions\Schemas;
 
-use App\Models\Centre;
+use App\Services\IndicatorService;
+use App\Services\TargetService;
 use Carbon\CarbonImmutable;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
@@ -11,7 +12,6 @@ use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Schemas\Components\Group;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -28,6 +28,7 @@ class IndicatorDefinitionForm
         $dataTypes = collect(config('impact.data_types'))
             ->mapWithKeys(fn (string $type): array => [$type => Str::headline($type)])
             ->all();
+        $targetableDataTypes = app(TargetService::class)->supportedDataTypes();
 
         return $schema->components([
             Wizard::make([
@@ -61,6 +62,7 @@ class IndicatorDefinitionForm
                             ->required(),
                         Select::make('frequency')
                             ->options(config('impact.frequencies'))
+                            ->live()
                             ->required()
                             ->default('monthly'),
                         TextInput::make('effective_date')
@@ -70,7 +72,12 @@ class IndicatorDefinitionForm
                             ->formatStateUsing(fn (mixed $state): ?string => filled($state) ? CarbonImmutable::parse($state)->format('Y-m') : null)
                             ->dehydrateStateUsing(fn (mixed $state): ?string => filled($state) ? CarbonImmutable::createFromFormat('Y-m', $state)->startOfMonth()->toDateString() : null)
                             ->rules(['date_format:Y-m'])
-                            ->helperText('The first month for which this indicator can be reported.')
+                            ->helperText(fn (Get $get): string => match ($get('frequency')) {
+                                'quarterly' => 'The fiscal quarter containing this month is the first quarter available for reporting.',
+                                'half_yearly' => 'The fiscal half-year containing this month is the first half-year available for reporting.',
+                                'annual' => 'The financial year containing this month is the first year available for reporting.',
+                                default => 'The first month for which this indicator can be reported.',
+                            })
                             ->required(),
                     ])
                     ->columns(2),
@@ -80,6 +87,22 @@ class IndicatorDefinitionForm
                         Select::make('data_type')
                             ->options($dataTypes)
                             ->live()
+                            ->afterStateUpdated(function (mixed $state, Get $get, Set $set) use ($targetableDataTypes): void {
+                                $options = app(IndicatorService::class)->acrossProjectOptions((string) $state);
+                                if (! array_key_exists((string) $get('centre_aggregation'), $options)) {
+                                    $set('centre_aggregation', array_key_first($options));
+                                }
+                                if (in_array($state, ['single_select', 'status'], true)) {
+                                    $set('time_aggregation', 'STATUS');
+                                }
+                                if (! in_array($state, $targetableDataTypes, true)) {
+                                    $set('target_tracking', false);
+                                } elseif (in_array($state, ['boolean', 'single_select', 'status'], true)) {
+                                    $set('direction', 'status');
+                                } elseif ($get('direction') === 'status') {
+                                    $set('direction', 'higher');
+                                }
+                            })
                             ->required(),
                         Toggle::make('value_required')
                             ->label('Require a value when reported')
@@ -163,70 +186,35 @@ class IndicatorDefinitionForm
                             ->required(),
                         Select::make('centre_aggregation')
                             ->label('Across projects')
-                            ->options(array_combine(config('impact.aggregations'), config('impact.aggregations')))
+                            ->options(fn (Get $get): array => app(IndicatorService::class)->acrossProjectOptions((string) $get('data_type')))
+                            ->afterStateUpdated(function (mixed $state, Set $set): void {
+                                if ($state === 'STATUS') {
+                                    $set('time_aggregation', 'STATUS');
+                                }
+                            })
+                            ->helperText('Used when All projects is selected. Each project is first calculated using the time method.')
                             ->required(),
                         Toggle::make('target_tracking')
-                            ->label('Track targets for this indicator')
+                            ->label('Compare results with targets when available')
+                            ->helperText('Reporting remains open even when no target has been set for a period. Plan targets separately under Indicator targets.')
                             ->live()
+                            ->visible(fn (Get $get): bool => in_array($get('data_type'), $targetableDataTypes, true))
                             ->default(true),
                         Select::make('direction')
-                            ->options([
-                                'higher' => 'Higher is better',
-                                'lower' => 'Lower is better',
-                                'range' => 'Target range',
-                                'status' => 'Status based',
-                            ])
+                            ->options(fn (Get $get): array => in_array($get('data_type'), ['boolean', 'single_select', 'status'], true)
+                                ? ['status' => 'Match the expected value']
+                                : [
+                                    'higher' => 'Higher is better',
+                                    'lower' => 'Lower is better',
+                                    'range' => 'Stay within a target range',
+                                ])
                             ->required(fn (Get $get): bool => (bool) $get('target_tracking'))
                             ->visible(fn (Get $get): bool => (bool) $get('target_tracking'))
                             ->default('higher'),
                     ])
                     ->columns(2),
-                ...($projectId === null ? [] : [
-                    Step::make('Project targets')
-                        ->description('Set the same target for every selected project or enter a different value for each project.')
-                        ->visible(fn (Get $get): bool => (bool) $get('target_tracking'))
-                        ->schema([
-                            Toggle::make('set_targets_now')
-                                ->label('Set targets now')
-                                ->live()
-                                ->default(false)
-                                ->columnSpanFull(),
-                            Select::make('target_period_type')
-                                ->label('Target period')
-                                ->options(config('impact.target_periods'))
-                                ->default('monthly')
-                                ->required(fn (Get $get): bool => (bool) $get('set_targets_now'))
-                                ->visible(fn (Get $get): bool => (bool) $get('set_targets_now')),
-                            DatePicker::make('target_period')
-                                ->label('Date within the target period')
-                                ->helperText('The system converts this date to the correct month, quarter, half-year, or financial year.')
-                                ->required(fn (Get $get): bool => (bool) $get('set_targets_now'))
-                                ->visible(fn (Get $get): bool => (bool) $get('set_targets_now')),
-                            Toggle::make('same_target_all_centres')
-                                ->label('Use the same target for all selected projects')
-                                ->live()
-                                ->default(true)
-                                ->visible(fn (Get $get): bool => (bool) $get('set_targets_now'))
-                                ->columnSpanFull(),
-                            Group::make(fn (Get $get): array => self::targetValueComponents(
-                                'shared_target',
-                                (string) $get('direction'),
-                                'Target',
-                            ))
-                                ->visible(fn (Get $get): bool => (bool) $get('set_targets_now') && (bool) $get('same_target_all_centres'))
-                                ->columns(2)
-                                ->columnSpanFull(),
-                            Group::make(fn (Get $get): array => self::centreTargetComponents(
-                                array_map('intval', $get('target_centre_ids') ?? []),
-                                (string) $get('direction'),
-                            ))
-                                ->visible(fn (Get $get): bool => (bool) $get('set_targets_now') && ! (bool) $get('same_target_all_centres'))
-                                ->columnSpanFull(),
-                        ])
-                        ->columns(2),
-                ]),
                 Step::make('Evidence and approval')
-                    ->description('Set proof and review requirements.')
+                    ->description('Choose whether evidence and approval are required. File limits can be adjusted if needed.')
                     ->schema([
                         Toggle::make('evidence_required')
                             ->live()
@@ -237,51 +225,45 @@ class IndicatorDefinitionForm
                             })
                             ->afterStateUpdated(function (bool $state, Set $set): void {
                                 $set('min_files', $state ? 1 : 0);
-                                if (! $state) {
-                                    $set('evidence_review_required', false);
-                                }
                             })
                             ->default(false),
                         Toggle::make('approval_required')
                             ->label('Require approval before results become official')
-                            ->live()
-                            ->afterStateUpdated(function (bool $state, Set $set): void {
-                                if (! $state) {
-                                    $set('evidence_review_required', false);
-                                }
-                            })
                             ->default(true),
-                        Toggle::make('evidence_review_required')
-                            ->label('Require reviewer confirmation of evidence')
-                            ->helperText('Approval is blocked until the reviewer confirms that they reviewed the supporting evidence.')
-                            ->visible(fn (Get $get): bool => (bool) $get('evidence_required') && (bool) $get('approval_required'))
-                            ->default(false),
-                        Select::make('allowed_extensions')
-                            ->multiple()
-                            ->options(['pdf' => 'PDF', 'jpg' => 'JPG', 'jpeg' => 'JPEG', 'png' => 'PNG', 'webp' => 'WEBP', 'docx' => 'DOCX', 'xlsx' => 'XLSX', 'csv' => 'CSV'])
-                            ->default(['pdf', 'jpg', 'png'])
-                            ->required(fn (Get $get): bool => (bool) $get('evidence_required'))
-                            ->visible(fn (Get $get): bool => (bool) $get('evidence_required')),
-                        TextInput::make('max_file_kb')
-                            ->label('Maximum file size (KB)')
-                            ->numeric()
-                            ->minValue(1)
-                            ->default(5120)
-                            ->required(),
-                        TextInput::make('min_files')
-                            ->label('Minimum files')
-                            ->numeric()
-                            ->minValue(1)
-                            ->maxValue(20)
-                            ->default(0)
-                            ->required(fn (Get $get): bool => (bool) $get('evidence_required'))
-                            ->visible(fn (Get $get): bool => (bool) $get('evidence_required')),
-                        TextInput::make('max_files')
-                            ->numeric()
-                            ->minValue(1)
-                            ->maxValue(20)
-                            ->default(5)
-                            ->required(),
+                        Section::make('Advanced evidence limits')
+                            ->description('Defaults allow up to five files of 5 MB each; one file is required when evidence is on.')
+                            ->collapsed()
+                            ->visible(fn (Get $get): bool => (bool) $get('evidence_required'))
+                            ->schema([
+                                Select::make('allowed_extensions')
+                                    ->multiple()
+                                    ->options(fn (): array => collect(config('impact.evidence_extensions'))->mapWithKeys(fn (string $extension): array => [$extension => strtoupper($extension)])->all())
+                                    ->default(fn (): array => config('impact.evidence_extensions'))
+                                    ->formatStateUsing(fn (mixed $state): array => filled($state) ? (array) $state : config('impact.evidence_extensions'))
+                                    ->required(),
+                                TextInput::make('max_file_kb')
+                                    ->label('Maximum file size (KB)')
+                                    ->numeric()
+                                    ->minValue(1)
+                                    ->default(5120)
+                                    ->required(),
+                                TextInput::make('min_files')
+                                    ->label('Minimum files')
+                                    ->numeric()
+                                    ->minValue(1)
+                                    ->maxValue(20)
+                                    ->default(1)
+                                    ->required(),
+                                TextInput::make('max_files')
+                                    ->label('Maximum files')
+                                    ->numeric()
+                                    ->minValue(1)
+                                    ->maxValue(20)
+                                    ->default(5)
+                                    ->required(),
+                            ])
+                            ->columns(2)
+                            ->columnSpanFull(),
                         Toggle::make('active')
                             ->helperText('Turn this off to archive the definition while keeping its history.')
                             ->default(true),
@@ -289,48 +271,5 @@ class IndicatorDefinitionForm
                     ->columns(2),
             ])->columnSpanFull(),
         ]);
-    }
-
-    /** @return array<int, mixed> */
-    private static function centreTargetComponents(array $centreIds, string $direction): array
-    {
-        return Centre::query()
-            ->whereKey($centreIds)
-            ->orderBy('name')
-            ->get()
-            ->map(fn (Centre $centre): Section => Section::make($centre->name)
-                ->schema(self::targetValueComponents("centre_targets.{$centre->id}", $direction, 'Target'))
-                ->columns(2))
-            ->all();
-    }
-
-    /** @return array<int, mixed> */
-    private static function targetValueComponents(string $prefix, string $direction, string $label): array
-    {
-        return match ($direction) {
-            'range' => [
-                TextInput::make("{$prefix}.minimum")
-                    ->label("{$label} minimum")
-                    ->numeric()
-                    ->required(),
-                TextInput::make("{$prefix}.maximum")
-                    ->label("{$label} maximum")
-                    ->numeric()
-                    ->required(),
-            ],
-            'status' => [
-                TextInput::make("{$prefix}.status")
-                    ->label('Expected status')
-                    ->required()
-                    ->columnSpanFull(),
-            ],
-            default => [
-                TextInput::make("{$prefix}.value")
-                    ->label("{$label} value")
-                    ->numeric()
-                    ->required()
-                    ->columnSpanFull(),
-            ],
-        };
     }
 }

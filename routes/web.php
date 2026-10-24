@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DataQualityController;
 use App\Http\Controllers\EntryController;
+use App\Http\Controllers\ExecutiveDashboardController;
 use App\Http\Controllers\ImportController;
 use App\Http\Controllers\KpiController;
 use App\Http\Controllers\NotificationController;
@@ -33,8 +34,11 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/data-entry', [EntryController::class, 'index'])->name('entries.index');
     Route::get('/data-entry/{assignment}', [EntryController::class, 'edit'])->name('entries.edit');
     Route::post('/data-entry/{assignment}', [EntryController::class, 'store'])->name('entries.store');
+    Route::post('/data-entry/entries/{entry}/amendment', [EntryController::class, 'requestAmendment'])->name('entries.amendment');
     Route::get('/approvals', [EntryController::class, 'approvals'])->name('approvals.index');
+    Route::post('/approvals/bulk', [EntryController::class, 'bulkReview'])->name('approvals.bulk');
     Route::post('/approvals/{entry}', [EntryController::class, 'review'])->name('approvals.review');
+    Route::get('/executive-dashboard', ExecutiveDashboardController::class)->name('executive.dashboard');
     Route::get('/evidence/{evidence}', [EntryController::class, 'evidence'])->name('evidence.download');
     Route::get('/evidence/{evidence}/preview', [EntryController::class, 'previewEvidence'])->name('evidence.preview');
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');

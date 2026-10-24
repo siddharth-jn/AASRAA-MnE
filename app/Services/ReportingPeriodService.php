@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 
 class ReportingPeriodService
 {
+    public function __construct(private readonly IndicatorReportingPeriodService $indicatorPeriods) {}
+
     /** @return array{type: string, start: CarbonImmutable, end: CarbonImmutable, data_start: CarbonImmutable, data_end: CarbonImmutable, warning: ?string} */
     public function fromRequest(Request $request): array
     {
@@ -15,10 +17,7 @@ class ReportingPeriodService
         $warning = null;
 
         [$start, $end] = match ($type) {
-            'monthly' => [$anchor->startOfMonth(), $anchor->endOfMonth()],
-            'quarterly' => $this->fiscalBoundaries($anchor, 3),
-            'half_yearly' => $this->fiscalBoundaries($anchor, 6),
-            'annual' => $this->fiscalBoundaries($anchor, 12),
+            'monthly', 'quarterly', 'half_yearly', 'annual' => $this->indicatorPeriods->boundaries($anchor, $type),
             'ytd' => [$this->financialYearStart($anchor), $anchor->endOfDay()],
             'custom' => [
                 CarbonImmutable::parse($request->input('start', $anchor->startOfMonth()->toDateString()))->startOfDay(),
@@ -47,16 +46,6 @@ class ReportingPeriodService
             'data_end' => $dataEnd,
             'warning' => $warning,
         ];
-    }
-
-    /** @return array{CarbonImmutable, CarbonImmutable} */
-    private function fiscalBoundaries(CarbonImmutable $anchor, int $months): array
-    {
-        $offsetFromApril = ($anchor->month - config('impact.financial_year_start_month', 4) + 12) % 12;
-        $periodOffset = $offsetFromApril % $months;
-        $start = $anchor->startOfMonth()->subMonths($periodOffset);
-
-        return [$start, $start->addMonths($months)->subDay()->endOfDay()];
     }
 
     private function financialYearStart(CarbonImmutable $anchor): CarbonImmutable
