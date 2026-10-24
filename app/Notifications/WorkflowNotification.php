@@ -15,6 +15,7 @@ class WorkflowNotification extends Notification
         public readonly string $message,
         public readonly string $url,
         public readonly string $kind = 'workflow',
+        public readonly bool $showcase = false,
     ) {}
 
     /** @return array<int, string> */
@@ -29,7 +30,7 @@ class WorkflowNotification extends Notification
         return $channels;
     }
 
-    /** @return array<string, string> */
+    /** @return array<string, bool|string> */
     public function toArray(object $notifiable): array
     {
         return [
@@ -37,6 +38,7 @@ class WorkflowNotification extends Notification
             'message' => $this->message,
             'url' => $this->url,
             'kind' => $this->kind,
+            'showcase' => $this->showcase,
         ];
     }
 

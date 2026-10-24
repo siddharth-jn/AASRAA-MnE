@@ -27,6 +27,7 @@ class EntryService
     public function save(User $user, IndicatorAssignment $assignment, string $period, array $data, array $files, bool $submit): IndicatorEntry
     {
         $definition = $assignment->loadMissing('indicator')->indicator;
+        $isDemo = (bool) $assignment->is_demo;
         $requestedPeriod = CarbonImmutable::parse($period)->startOfMonth();
         [$normalizedPeriod, $periodEnd] = $this->periods->boundaries($requestedPeriod, $definition->frequency);
         if (! $this->periods->isAvailable($definition, $requestedPeriod)) {
@@ -44,7 +45,7 @@ class EntryService
         }
 
         try {
-            $entry = DB::transaction(function () use ($user, $assignment, $normalizedPeriod, $periodEnd, $definition, $data, $files, $submit, $variance): IndicatorEntry {
+            $entry = DB::transaction(function () use ($user, $assignment, $normalizedPeriod, $periodEnd, $definition, $data, $files, $submit, $variance, $isDemo): IndicatorEntry {
                 $matchingEntries = IndicatorEntry::query()
                     ->where('indicator_assignment_id', $assignment->id)
                     ->whereBetween('period', [$normalizedPeriod, $periodEnd])
@@ -61,7 +62,7 @@ class EntryService
                         'indicator_assignment_id' => $assignment->id,
                         'period' => $normalizedPeriod->toDateString(),
                         'status' => 'DRAFT',
-                        'is_demo' => false,
+                        'is_demo' => $isDemo,
                     ]);
                 } elseif (! $entry->period->isSameDay($normalizedPeriod)) {
                     $entry->update(['period' => $normalizedPeriod->toDateString()]);
@@ -96,7 +97,7 @@ class EntryService
                     'variance_explanation' => $data['variance_explanation'] ?? null,
                     'submitted_at' => $submit ? now() : null,
                     'approved_at' => $status === WorkflowStatus::FinalApproved ? now() : null,
-                    'is_demo' => false,
+                    'is_demo' => (bool) $entry->is_demo,
                 ]);
                 $evidenceDisk = (string) config('impact.evidence_disk', 'local');
                 foreach ($files as $file) {
@@ -107,7 +108,7 @@ class EntryService
                         'original_name' => $file->getClientOriginalName(),
                         'mime_type' => $file->getMimeType() ?: 'application/octet-stream',
                         'size' => $file->getSize(),
-                        'is_demo' => false,
+                        'is_demo' => (bool) $entry->is_demo,
                     ]);
                 }
                 $entry->update([
@@ -130,6 +131,7 @@ class EntryService
                 "{$entry->assignment->indicator->name} was submitted for {$entry->assignment->centre->name}.",
                 route('approvals.index'),
                 'approval_required',
+                showcase: (bool) $entry->is_demo,
             )));
         }
 
@@ -162,7 +164,7 @@ class EntryService
                 default => throw ValidationException::withMessages(['action' => 'Invalid review action.']),
             };
             $revision->update(['status' => $status, 'approved_at' => $status === WorkflowStatus::FinalApproved ? now() : null]);
-            ApprovalAction::create(['entry_revision_id' => $revision->id, 'user_id' => $reviewer->id, 'stage' => $stage, 'action' => $status, 'comment' => $comment, 'is_demo' => false]);
+            ApprovalAction::create(['entry_revision_id' => $revision->id, 'user_id' => $reviewer->id, 'stage' => $stage, 'action' => $status, 'comment' => $comment, 'is_demo' => (bool) $revision->is_demo]);
             $entry->update(['status' => $status, 'approved_revision_id' => $status === WorkflowStatus::FinalApproved ? $revision->id : $entry->approved_revision_id]);
 
             return $entry->fresh();
@@ -179,6 +181,7 @@ class EntryService
                 'period_type' => $entry->assignment->indicator->frequency,
             ]),
             strtolower(str_replace([' ', '&'], ['_', 'and'], $entry->status)),
+            showcase: (bool) $entry->is_demo,
         ));
 
         if ($entry->status === WorkflowStatus::PendingMneHead) {
@@ -187,6 +190,7 @@ class EntryService
                 "{$entry->assignment->indicator->name} passed Senior Programme Lead review for {$entry->assignment->centre->name}.",
                 route('approvals.index'),
                 'mne_approval_required',
+                showcase: (bool) $entry->is_demo,
             )));
         }
 
@@ -196,6 +200,7 @@ class EntryService
                 "{$entry->assignment->indicator->name} was final approved for {$entry->assignment->centre->name}.",
                 route('executive.dashboard'),
                 'final_approved',
+                showcase: (bool) $entry->is_demo,
             )));
         }
 
@@ -229,7 +234,7 @@ class EntryService
                 'variance_percentage' => $approved->variance_percentage,
                 'variance_flagged' => $approved->variance_flagged,
                 'variance_explanation' => $approved->variance_explanation,
-                'is_demo' => false,
+                'is_demo' => (bool) $entry->is_demo,
             ]);
             foreach ($approved->evidence as $file) {
                 $revision->evidence()->create([
@@ -239,7 +244,7 @@ class EntryService
                     'original_name' => $file->original_name,
                     'mime_type' => $file->mime_type,
                     'size' => $file->size,
-                    'is_demo' => false,
+                    'is_demo' => (bool) $entry->is_demo,
                 ]);
             }
             $entry->update([

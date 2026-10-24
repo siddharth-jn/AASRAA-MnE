@@ -33,22 +33,35 @@ class DemoDataService
         ];
 
         DB::transaction(function (): void {
-            EvidenceFile::query()->where('is_demo', true)->each(function (EvidenceFile $file): void {
-                Storage::disk($file->disk ?: config('impact.evidence_disk', 'local'))->delete($file->path);
-            });
+            $this->deleteAuditLogsForDemoRecords();
+            EvidenceFile::query()
+                ->where('is_demo', true)
+                ->orWhereIn('entry_revision_id', EntryRevision::query()->where('is_demo', true)->select('id'))
+                ->each(function (EvidenceFile $file): void {
+                    Storage::disk($file->disk ?: config('impact.evidence_disk', 'local'))->delete($file->path);
+                });
             DB::table('notifications')->where('data', 'like', '%"showcase":true%')->delete();
             AuditLog::query()->where('is_demo', true)->delete();
             ImportRow::query()->where('is_demo', true)->delete();
             ImportBatch::query()->where('is_demo', true)->delete();
-            ApprovalAction::query()->where('is_demo', true)->delete();
-            EvidenceFile::query()->where('is_demo', true)->delete();
+            ApprovalAction::query()
+                ->where('is_demo', true)
+                ->orWhereIn('entry_revision_id', EntryRevision::query()->where('is_demo', true)->select('id'))
+                ->delete();
+            EvidenceFile::query()
+                ->where('is_demo', true)
+                ->orWhereIn('entry_revision_id', EntryRevision::query()->where('is_demo', true)->select('id'))
+                ->delete();
             IndicatorEntry::query()->where('is_demo', true)->update([
                 'current_revision_id' => null,
                 'approved_revision_id' => null,
             ]);
             EntryRevision::query()->where('is_demo', true)->delete();
             IndicatorEntry::query()->where('is_demo', true)->delete();
-            IndicatorTarget::query()->where('is_demo', true)->delete();
+            IndicatorTarget::query()
+                ->where('is_demo', true)
+                ->orWhereIn('indicator_assignment_id', IndicatorAssignment::query()->where('is_demo', true)->select('id'))
+                ->delete();
             IndicatorAssignment::query()->where('is_demo', true)->delete();
             IndicatorDefinitionVersion::query()->where('is_demo', true)->delete();
             IndicatorDefinition::query()->where('is_demo', true)->delete();
@@ -64,5 +77,41 @@ class DemoDataService
         Storage::disk(config('impact.evidence_disk', 'local'))->deleteDirectory('evidence/showcase');
 
         return $statistics;
+    }
+
+    private function deleteAuditLogsForDemoRecords(): void
+    {
+        $subjects = [
+            User::class => User::query()->where('is_demo', true)->select('id'),
+            Programme::class => Programme::query()->where('is_demo', true)->select('id'),
+            Project::class => Project::query()->where('is_demo', true)->select('id'),
+            Centre::class => Centre::query()->where('is_demo', true)->select('id'),
+            IndicatorDefinition::class => IndicatorDefinition::query()->where('is_demo', true)->select('id'),
+            IndicatorDefinitionVersion::class => IndicatorDefinitionVersion::query()->where('is_demo', true)->select('id'),
+            IndicatorAssignment::class => IndicatorAssignment::query()->where('is_demo', true)->select('id'),
+            IndicatorTarget::class => IndicatorTarget::query()
+                ->where('is_demo', true)
+                ->orWhereIn('indicator_assignment_id', IndicatorAssignment::query()->where('is_demo', true)->select('id'))
+                ->select('id'),
+            IndicatorEntry::class => IndicatorEntry::query()->where('is_demo', true)->select('id'),
+            EntryRevision::class => EntryRevision::query()->where('is_demo', true)->select('id'),
+            EvidenceFile::class => EvidenceFile::query()
+                ->where('is_demo', true)
+                ->orWhereIn('entry_revision_id', EntryRevision::query()->where('is_demo', true)->select('id'))
+                ->select('id'),
+            ApprovalAction::class => ApprovalAction::query()
+                ->where('is_demo', true)
+                ->orWhereIn('entry_revision_id', EntryRevision::query()->where('is_demo', true)->select('id'))
+                ->select('id'),
+            ImportBatch::class => ImportBatch::query()->where('is_demo', true)->select('id'),
+            ImportRow::class => ImportRow::query()->where('is_demo', true)->select('id'),
+        ];
+
+        foreach ($subjects as $subjectType => $subjectIds) {
+            AuditLog::query()
+                ->where('subject_type', $subjectType)
+                ->whereIn('subject_id', $subjectIds)
+                ->delete();
+        }
     }
 }

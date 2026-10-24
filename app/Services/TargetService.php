@@ -104,6 +104,7 @@ class TargetService
         [$periodStart, $periodEnd] = $this->indicatorPeriods->boundaries($period, (string) $data['period_type']);
         $data['period'] = $periodStart->toDateString();
         $data['period_end'] = $periodEnd->toDateString();
+        $data['is_demo'] = (bool) $assignment->is_demo;
 
         $targetType = $this->typeForIndicator($assignment->indicator);
         $errors = [];

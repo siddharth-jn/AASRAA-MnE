@@ -29,7 +29,7 @@ abstract class ImpactModel extends Model
                 'subject_type' => $model::class,
                 'subject_id' => $model->getKey(),
                 'changes' => collect($model->getChanges())->except(['password', 'remember_token'])->all(),
-                'is_demo' => false,
+                'is_demo' => (bool) ($model->is_demo ?? false),
             ]);
         }
     }

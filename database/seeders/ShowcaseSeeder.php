@@ -279,11 +279,13 @@ class ShowcaseSeeder extends Seeder
             }
             if ($scenario['data_type'] === 'status') {
                 $evidenceRevisions['structured'] = $revision;
+                [$targetPeriod, $targetPeriodEnd] = app(IndicatorReportingPeriodService::class)
+                    ->boundaries($period, 'annual');
                 IndicatorTarget::query()->create([
                     'indicator_assignment_id' => $assignment->id,
-                    'period' => CarbonImmutable::create($year, 1, 1),
+                    'period' => $targetPeriod,
                     'period_type' => 'annual',
-                    'period_end' => CarbonImmutable::create($year, 12, 31),
+                    'period_end' => $targetPeriodEnd,
                     'target_type' => 'status',
                     'status_value' => 'On track',
                     'notes' => 'Synthetic annual status target.',

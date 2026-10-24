@@ -11,6 +11,7 @@ use App\Models\Programme;
 use App\Models\Project;
 use App\Models\User;
 use App\Services\EntryService;
+use App\Services\ScopeService;
 use App\Support\WorkflowStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
@@ -64,5 +65,55 @@ class ImpactTest extends TestCase
 
         $this->assertDatabaseHas('programmes', ['name' => 'Operational programme']);
         $this->assertDatabaseMissing('programmes', ['name' => 'Demo programme']);
+    }
+
+    public function test_demo_users_can_access_only_demo_indicator_assignments(): void
+    {
+        $user = User::factory()->create(['role' => 'PROGRAM LEAD', 'is_demo' => true]);
+        $programme = Programme::create(['name' => 'Test programme', 'description' => 'Test', 'is_demo' => false]);
+        $project = Project::create(['programme_id' => $programme->id, 'code' => 'TEST', 'name' => 'Test project', 'description' => 'Test', 'active' => true, 'is_demo' => false]);
+        $centre = Centre::create(['code' => 'C1', 'name' => 'Test centre', 'type' => 'Education Centre', 'region' => 'Dehradun', 'is_demo' => false]);
+        $project->centres()->attach($centre, ['is_demo' => false]);
+        $user->projects()->attach($project, ['is_demo' => true]);
+        $user->centres()->attach($centre, ['is_demo' => true]);
+
+        $indicatorAttributes = [
+            'project_id' => $project->id,
+            'name' => 'Sessions',
+            'description' => 'Test',
+            'category' => 'Activity',
+            'unit' => 'sessions',
+            'data_type' => 'integer',
+            'frequency' => 'monthly',
+            'time_aggregation' => 'SUM',
+            'centre_aggregation' => 'SUM',
+            'min_value' => 0,
+            'active' => true,
+        ];
+        $operationalIndicator = IndicatorDefinition::create([
+            ...$indicatorAttributes,
+            'code' => 'OPERATIONAL-I',
+            'is_demo' => false,
+        ]);
+        $demoIndicator = IndicatorDefinition::create([
+            ...$indicatorAttributes,
+            'code' => 'DEMO-I',
+            'is_demo' => true,
+        ]);
+        $operationalAssignment = IndicatorAssignment::create([
+            'indicator_definition_id' => $operationalIndicator->id,
+            'centre_id' => $centre->id,
+            'is_demo' => false,
+        ]);
+        $demoAssignment = IndicatorAssignment::create([
+            'indicator_definition_id' => $demoIndicator->id,
+            'centre_id' => $centre->id,
+            'is_demo' => true,
+        ]);
+
+        $assignments = app(ScopeService::class)->assignments($user);
+
+        $this->assertFalse((clone $assignments)->whereKey($operationalAssignment)->exists());
+        $this->assertTrue((clone $assignments)->whereKey($demoAssignment)->exists());
     }
 }

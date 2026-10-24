@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\ApprovalAction;
+use App\Models\AuditLog;
 use App\Models\Centre;
 use App\Models\EvidenceFile;
 use App\Models\IndicatorDefinition;
@@ -9,6 +11,9 @@ use App\Models\IndicatorEntry;
 use App\Models\Programme;
 use App\Models\Project;
 use App\Models\User;
+use App\Services\EntryService;
+use App\Services\TargetService;
+use App\Support\WorkflowStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -21,7 +26,7 @@ class ShowcaseDataTest extends TestCase
     {
         Storage::fake('local');
         $this->createAuthoritativeCatalogue();
-        User::factory()->create([
+        $administrator = User::factory()->create([
             'name' => 'Siddharth Jain',
             'email' => 'siddharth@aasraatrust.org',
             'role' => 'ADMIN',
@@ -57,12 +62,75 @@ class ShowcaseDataTest extends TestCase
         $this->assertDatabaseHas('indicator_targets', ['target_type' => 'range', 'is_demo' => true]);
         $this->assertDatabaseHas('indicator_targets', ['target_type' => 'status', 'is_demo' => true]);
 
+        $annualIndicator = IndicatorDefinition::query()
+            ->where('code', 'SHOWCASE-2026-TYPE-07')
+            ->firstOrFail();
+        $annualAssignmentId = $annualIndicator->assignments()->value('id');
+
+        $this->assertTrue(
+            IndicatorEntry::query()
+                ->where('indicator_assignment_id', $annualAssignmentId)
+                ->whereDate('period', '2026-04-01')
+                ->where('is_demo', true)
+                ->exists(),
+        );
+        $this->assertTrue(
+            $annualIndicator->targets()
+                ->whereDate('period', '2026-04-01')
+                ->whereDate('period_end', '2027-03-31')
+                ->where('period_type', 'annual')
+                ->where('target_type', 'status')
+                ->where('status_value', 'On track')
+                ->where('indicator_targets.is_demo', true)
+                ->exists(),
+        );
+
         $evidencePaths = EvidenceFile::query()->pluck('path');
         $this->assertEqualsCanonicalizing(
             ['csv', 'docx', 'jpeg', 'jpg', 'pdf', 'png', 'webp', 'xlsx'],
             $evidencePaths->map(fn (string $path): string => pathinfo($path, PATHINFO_EXTENSION))->all(),
         );
         $evidencePaths->each(fn (string $path) => Storage::disk('local')->assertExists($path));
+
+        $pendingEntry = IndicatorEntry::query()
+            ->where('status', WorkflowStatus::PendingSeniorProgrammeLead)
+            ->firstOrFail();
+        app(EntryService::class)->review($administrator, $pendingEntry, 'APPROVED', null);
+        app(EntryService::class)->review($administrator, $pendingEntry->fresh(), 'APPROVED', null);
+
+        $this->assertSame(
+            2,
+            ApprovalAction::query()
+                ->where('entry_revision_id', $pendingEntry->current_revision_id)
+                ->where('is_demo', true)
+                ->count(),
+        );
+
+        $futureTarget = app(TargetService::class)->save([
+            'indicator_assignment_id' => $annualAssignmentId,
+            'period' => '2027-04-01',
+            'period_type' => 'annual',
+            'status_value' => 'Complete',
+            'notes' => null,
+            'active' => true,
+        ]);
+        $this->assertTrue($futureTarget->is_demo);
+
+        $mismatchedAction = ApprovalAction::query()
+            ->where('entry_revision_id', $pendingEntry->current_revision_id)
+            ->firstOrFail();
+        $mismatchedAction->update(['is_demo' => false]);
+        $futureTarget->update(['is_demo' => false]);
+        foreach ([$mismatchedAction, $futureTarget] as $mismatchedRecord) {
+            AuditLog::query()->create([
+                'user_id' => $administrator->id,
+                'action' => 'updated',
+                'subject_type' => $mismatchedRecord::class,
+                'subject_id' => $mismatchedRecord->id,
+                'changes' => ['is_demo' => false],
+                'is_demo' => false,
+            ]);
+        }
 
         $firstCounts = [
             IndicatorDefinition::query()->count(),
@@ -74,6 +142,15 @@ class ShowcaseDataTest extends TestCase
             IndicatorDefinition::query()->count(),
             IndicatorEntry::query()->count(),
             EvidenceFile::query()->count(),
+        ]);
+        $this->assertDatabaseCount('notifications', 3);
+        $this->assertDatabaseMissing('audit_logs', [
+            'subject_type' => $mismatchedAction::class,
+            'subject_id' => $mismatchedAction->id,
+        ]);
+        $this->assertDatabaseMissing('audit_logs', [
+            'subject_type' => $futureTarget::class,
+            'subject_id' => $futureTarget->id,
         ]);
 
         $this->artisan('impact:clear-demo-data', ['--force' => true])->assertSuccessful();

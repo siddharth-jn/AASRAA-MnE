@@ -33,7 +33,10 @@ class ScopeService
 
     public function assignments(User $user): Builder
     {
-        return IndicatorAssignment::query()->whereHas('indicator.project', fn (Builder $q) => $q->whereIn('projects.id', $this->projects($user)->select('projects.id')))->whereIn('centre_id', $this->centres($user)->select('centres.id'));
+        return IndicatorAssignment::query()
+            ->whereHas('indicator.project', fn (Builder $q) => $q->whereIn('projects.id', $this->projects($user)->select('projects.id')))
+            ->whereIn('centre_id', $this->centres($user)->select('centres.id'))
+            ->when($user->is_demo, fn (Builder $query): Builder => $query->where('indicator_assignments.is_demo', true));
     }
 
     public function entries(User $user): Builder
