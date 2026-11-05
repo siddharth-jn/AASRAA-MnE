@@ -25,10 +25,17 @@ class KpiController extends Controller
             abort_unless($indicator->centres->contains('id', $centreId), 403);
         }
 
-        $end = CarbonImmutable::parse($request->input('end', '2026-09-30'))->endOfMonth();
+        $end = CarbonImmutable::parse($request->input('end', CarbonImmutable::now()->endOfMonth()->toDateString()))->endOfMonth();
         $start = CarbonImmutable::parse($request->input('start', $end->subMonths(5)->startOfMonth()->toDateString()))->startOfMonth();
         abort_if($end->lt($start), 422, 'End date must be after start date.');
 
+        $showWorkflowHistory = ! in_array($request->user()->role, ['VIEWER', 'CEO', 'CFO'], true);
+        $entryRelations = ['assignment.centre', 'approvedRevision.evidence'];
+        if ($showWorkflowHistory) {
+            $entryRelations[] = 'revisions.user';
+            $entryRelations[] = 'revisions.evidence';
+            $entryRelations[] = 'revisions.actions.user';
+        }
         $entries = $scope->entries($request->user())
             ->whereHas('assignment', function (Builder $query) use ($indicator, $centreId): void {
                 $query->where('indicator_definition_id', $indicator->id);
@@ -37,7 +44,7 @@ class KpiController extends Controller
                 }
             })
             ->whereBetween('period', [$start, $end])
-            ->with(['assignment.centre', 'approvedRevision.evidence', 'revisions.user', 'revisions.evidence', 'revisions.actions.user'])
+            ->with($entryRelations)
             ->orderBy('period')
             ->get();
 
@@ -47,6 +54,7 @@ class KpiController extends Controller
             'start' => $start,
             'end' => $end,
             'entries' => $entries,
+            'showWorkflowHistory' => $showWorkflowHistory,
             'rows' => $reports->report($request->user(), $start, $end, $project->id, $centreId, $indicator->id),
         ]);
     }

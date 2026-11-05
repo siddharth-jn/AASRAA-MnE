@@ -13,9 +13,14 @@ use App\Models\IndicatorAssignment;
 use App\Models\IndicatorDefinition;
 use App\Models\IndicatorDefinitionVersion;
 use App\Models\IndicatorEntry;
+use App\Models\IndicatorImportBatch;
+use App\Models\IndicatorImportRow;
 use App\Models\IndicatorTarget;
+use App\Models\IndicatorTargetRevision;
 use App\Models\Programme;
 use App\Models\Project;
+use App\Models\TargetImportBatch;
+use App\Models\TargetImportRow;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -44,6 +49,10 @@ class DemoDataService
             AuditLog::query()->where('is_demo', true)->delete();
             ImportRow::query()->where('is_demo', true)->delete();
             ImportBatch::query()->where('is_demo', true)->delete();
+            IndicatorImportRow::query()->where('is_demo', true)->delete();
+            IndicatorImportBatch::query()->where('is_demo', true)->delete();
+            TargetImportRow::query()->where('is_demo', true)->delete();
+            TargetImportBatch::query()->where('is_demo', true)->delete();
             ApprovalAction::query()
                 ->where('is_demo', true)
                 ->orWhereIn('entry_revision_id', EntryRevision::query()->where('is_demo', true)->select('id'))
@@ -58,6 +67,13 @@ class DemoDataService
             ]);
             EntryRevision::query()->where('is_demo', true)->delete();
             IndicatorEntry::query()->where('is_demo', true)->delete();
+            IndicatorTargetRevision::query()
+                ->where('is_demo', true)
+                ->orWhereIn('indicator_target_id', IndicatorTarget::query()
+                    ->where('is_demo', true)
+                    ->orWhereIn('indicator_assignment_id', IndicatorAssignment::query()->where('is_demo', true)->select('id'))
+                    ->select('id'))
+                ->delete();
             IndicatorTarget::query()
                 ->where('is_demo', true)
                 ->orWhereIn('indicator_assignment_id', IndicatorAssignment::query()->where('is_demo', true)->select('id'))
@@ -93,6 +109,13 @@ class DemoDataService
                 ->where('is_demo', true)
                 ->orWhereIn('indicator_assignment_id', IndicatorAssignment::query()->where('is_demo', true)->select('id'))
                 ->select('id'),
+            IndicatorTargetRevision::class => IndicatorTargetRevision::query()
+                ->where('is_demo', true)
+                ->orWhereIn('indicator_target_id', IndicatorTarget::query()
+                    ->where('is_demo', true)
+                    ->orWhereIn('indicator_assignment_id', IndicatorAssignment::query()->where('is_demo', true)->select('id'))
+                    ->select('id'))
+                ->select('id'),
             IndicatorEntry::class => IndicatorEntry::query()->where('is_demo', true)->select('id'),
             EntryRevision::class => EntryRevision::query()->where('is_demo', true)->select('id'),
             EvidenceFile::class => EvidenceFile::query()
@@ -105,6 +128,10 @@ class DemoDataService
                 ->select('id'),
             ImportBatch::class => ImportBatch::query()->where('is_demo', true)->select('id'),
             ImportRow::class => ImportRow::query()->where('is_demo', true)->select('id'),
+            IndicatorImportBatch::class => IndicatorImportBatch::query()->where('is_demo', true)->select('id'),
+            IndicatorImportRow::class => IndicatorImportRow::query()->where('is_demo', true)->select('id'),
+            TargetImportBatch::class => TargetImportBatch::query()->where('is_demo', true)->select('id'),
+            TargetImportRow::class => TargetImportRow::query()->where('is_demo', true)->select('id'),
         ];
 
         foreach ($subjects as $subjectType => $subjectIds) {

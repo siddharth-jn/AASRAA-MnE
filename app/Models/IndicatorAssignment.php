@@ -31,6 +31,8 @@ class IndicatorAssignment extends ImpactModel
 
     public function getDisplayNameAttribute(): string
     {
-        return "{$this->indicator->code} · {$this->indicator->name} · {$this->centre->name}";
+        $scopeName = $this->centre?->name ?? $this->indicator->project->name.' (programme level)';
+
+        return "{$this->indicator->code} · {$this->indicator->name} · {$scopeName}";
     }
 }

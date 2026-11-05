@@ -10,6 +10,11 @@ class EditCentre extends EditRecord
 {
     protected static string $resource = CentreResource::class;
 
+    protected function afterSave(): void
+    {
+        $this->record->ensureLeadAccess();
+    }
+
     protected function getHeaderActions(): array
     {
         return [

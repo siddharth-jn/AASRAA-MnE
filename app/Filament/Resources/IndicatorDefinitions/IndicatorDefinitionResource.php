@@ -4,6 +4,7 @@ namespace App\Filament\Resources\IndicatorDefinitions;
 
 use App\Filament\Resources\IndicatorDefinitions\Pages\CreateIndicatorDefinition;
 use App\Filament\Resources\IndicatorDefinitions\Pages\EditIndicatorDefinition;
+use App\Filament\Resources\IndicatorDefinitions\Pages\ImportIndicatorDefinitions;
 use App\Filament\Resources\IndicatorDefinitions\Pages\ListIndicatorDefinitions;
 use App\Filament\Resources\IndicatorDefinitions\Schemas\IndicatorDefinitionForm;
 use App\Filament\Resources\IndicatorDefinitions\Tables\IndicatorDefinitionsTable;
@@ -18,15 +19,15 @@ class IndicatorDefinitionResource extends Resource
 {
     protected static ?string $model = IndicatorDefinition::class;
 
-    protected static bool $shouldRegisterNavigation = false;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedChartBarSquare;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static ?string $navigationLabel = 'Indicators';
 
-    protected static ?string $navigationLabel = 'Indicator definitions';
+    protected static ?string $modelLabel = 'indicator';
 
-    protected static ?string $modelLabel = 'indicator definition';
+    protected static ?string $pluralModelLabel = 'indicators';
 
-    protected static ?int $navigationSort = 5;
+    protected static ?int $navigationSort = 4;
 
     public static function form(Schema $schema): Schema
     {
@@ -49,6 +50,7 @@ class IndicatorDefinitionResource extends Resource
     {
         return [
             'index' => ListIndicatorDefinitions::route('/'),
+            'import' => ImportIndicatorDefinitions::route('/import'),
             'create' => CreateIndicatorDefinition::route('/create'),
             'edit' => EditIndicatorDefinition::route('/{record}/edit'),
         ];

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\IndicatorDefinitions\Tables;
 
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -77,17 +78,38 @@ class IndicatorDefinitionsTable
                     ->relationship('project', 'name')
                     ->searchable()
                     ->preload(),
+                SelectFilter::make('centre')
+                    ->label('Project')
+                    ->relationship('centres', 'name')
+                    ->searchable()
+                    ->preload(),
                 SelectFilter::make('category')
                     ->options(array_combine(config('impact.categories'), config('impact.categories'))),
+                SelectFilter::make('reporting_scope')
+                    ->label('Reporting level')
+                    ->options([
+                        'project' => 'Project level',
+                        'programme' => 'Programme level',
+                    ]),
                 SelectFilter::make('data_type')
                     ->options(collect(config('impact.data_types'))->mapWithKeys(fn (string $type): array => [$type => Str::headline($type)])->all()),
-                SelectFilter::make('frequency')
-                    ->options(config('impact.frequencies')),
-                TernaryFilter::make('active'),
+                TernaryFilter::make('target_tracking')
+                    ->label('Uses targets'),
+                TernaryFilter::make('active')
+                    ->label('Active status'),
             ])
             ->defaultSort('name')
             ->recordActions([
                 EditAction::make(),
+                DeleteAction::make()
+                    ->modalHeading('Delete unused indicator?')
+                    ->modalDescription('This permanently deletes the indicator definition and its project assignments. This cannot be undone.')
+                    ->modalSubmitActionLabel('Delete indicator')
+                    ->disabled(fn ($record): bool => $record->hasHistoricalData())
+                    ->tooltip(fn ($record): ?string => $record->hasHistoricalData()
+                        ? 'This indicator has targets or entries. Archive it instead to preserve reporting history.'
+                        : null)
+                    ->using(fn ($record): bool => $record->deleteIfUnused()),
             ])
             ->toolbarActions([]);
     }

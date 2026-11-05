@@ -7,6 +7,8 @@ use App\Models\IndicatorDefinition;
 use App\Models\IndicatorTarget;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class TargetService
@@ -17,7 +19,10 @@ class TargetService
     /** @var array<int, string> */
     private const STATUS_DATA_TYPES = ['boolean', 'single_select', 'status'];
 
-    public function __construct(private readonly IndicatorReportingPeriodService $indicatorPeriods) {}
+    public function __construct(
+        private readonly IndicatorReportingPeriodService $indicatorPeriods,
+        private readonly TargetChangeService $targetChanges,
+    ) {}
 
     /** @return array<int, string> */
     public function supportedDataTypes(): array
@@ -27,6 +32,11 @@ class TargetService
 
     public function typeForIndicator(IndicatorDefinition $indicator): ?string
     {
+        if (in_array($indicator->data_type, ['ratio', 'calculated'], true)
+            || ($indicator->data_type === 'percentage' && $indicator->calculation_method === 'ratio_percentage')) {
+            return 'ratio';
+        }
+
         if (in_array($indicator->data_type, self::NUMERIC_DATA_TYPES, true)) {
             return $indicator->direction === 'range' ? 'range' : 'numeric';
         }
@@ -74,24 +84,36 @@ class TargetService
     }
 
     /** @param array<string, mixed> $data */
-    public function save(array $data): IndicatorTarget
+    public function save(array $data, string $source = 'manual'): IndicatorTarget
     {
         $period = CarbonImmutable::parse($data['period'])->startOfDay();
-        [$periodStart] = $this->indicatorPeriods->boundaries($period, (string) $data['period_type']);
+        [$periodStart] = $this->indicatorPeriods->boundaries($period, 'monthly');
         $target = IndicatorTarget::query()
             ->where('indicator_assignment_id', $data['indicator_assignment_id'])
             ->whereDate('period', $periodStart)
-            ->where('period_type', $data['period_type'])
+            ->where('period_type', 'monthly')
             ->first();
         $prepared = $this->prepareAndValidate($data, $target);
+        $previous = $target ? $this->snapshot($target) : null;
 
-        if ($target) {
-            $target->update($prepared);
+        return DB::transaction(function () use ($target, $prepared, $previous, $source): IndicatorTarget {
+            if ($target) {
+                $target->update($prepared);
+                $target = $target->fresh();
+            } else {
+                $target = IndicatorTarget::create($prepared);
+            }
 
-            return $target->fresh();
-        }
+            $current = $this->snapshot($target);
+            if ($previous === $current) {
+                return $target;
+            }
 
-        return IndicatorTarget::create($prepared);
+            $this->recordRevision($target, $previous === null ? 'created' : ($previous['active'] ? 'updated' : 'restored'), $source);
+            $this->targetChanges->handle($target, false);
+
+            return $target;
+        });
     }
 
     /** @param array<string, mixed> $data
@@ -101,15 +123,19 @@ class TargetService
     {
         $assignment = IndicatorAssignment::query()->with('indicator')->findOrFail($data['indicator_assignment_id']);
         $period = CarbonImmutable::parse($data['period'])->startOfDay();
-        [$periodStart, $periodEnd] = $this->indicatorPeriods->boundaries($period, (string) $data['period_type']);
+        [$periodStart, $periodEnd] = $this->indicatorPeriods->boundaries($period, 'monthly');
         $data['period'] = $periodStart->toDateString();
         $data['period_end'] = $periodEnd->toDateString();
+        $data['period_type'] = 'monthly';
         $data['is_demo'] = (bool) $assignment->is_demo;
 
         $targetType = $this->typeForIndicator($assignment->indicator);
         $errors = [];
-        if ($data['period_type'] !== $assignment->indicator->frequency) {
-            $errors['period_type'] = 'The target period must match this indicator’s reporting frequency.';
+        if (! $assignment->indicator->isEffectiveForPeriod($periodStart)) {
+            $errors['period'] = 'Targets cannot be set before reporting starts in '.$assignment->indicator->effective_date->format('F Y').'.';
+        }
+        if ($assignment->indicator->frequency !== 'monthly') {
+            $errors['period_type'] = 'All indicators must use monthly reporting before targets can be set.';
         }
         if (! $assignment->indicator->target_tracking) {
             $errors['indicator_assignment_id'] = 'Enable target tracking for this indicator before setting a target.';
@@ -131,6 +157,22 @@ class TargetService
             }
             if (! $minimumError && ! $maximumError && (float) $data['minimum_value'] > (float) $data['maximum_value']) {
                 $errors['maximum_value'] = 'The maximum target must be greater than or equal to the minimum target.';
+            }
+        }
+        if ($targetType === 'ratio') {
+            $numeratorError = $this->numericValueError($data['target_numerator'] ?? null, $assignment->indicator, false);
+            $denominatorError = $this->numericValueError($data['target_denominator'] ?? null, $assignment->indicator, false);
+            if ($numeratorError) {
+                $errors['target_numerator'] = $numeratorError;
+            }
+            if ($denominatorError || (float) ($data['target_denominator'] ?? 0) <= 0) {
+                $errors['target_denominator'] = 'Enter a target denominator greater than zero.';
+            }
+            if (! isset($errors['target_numerator']) && ! isset($errors['target_denominator'])) {
+                $data['value'] = (float) $data['target_numerator'] / (float) $data['target_denominator'] * 100;
+                if (($error = $this->numericValueError($data['value'], $assignment->indicator))) {
+                    $errors['target_numerator'] = $error;
+                }
             }
         }
         if ($targetType === 'status') {
@@ -159,7 +201,7 @@ class TargetService
             throw ValidationException::withMessages($errors);
         }
 
-        if ($targetType !== 'numeric') {
+        if (! in_array($targetType, ['numeric', 'ratio'], true)) {
             $data['value'] = null;
         }
         if ($targetType !== 'range') {
@@ -169,11 +211,16 @@ class TargetService
         if ($targetType !== 'status') {
             $data['status_value'] = null;
         }
+        if ($targetType !== 'ratio') {
+            $data['target_numerator'] = null;
+            $data['target_denominator'] = null;
+        }
+        $data['active'] = true;
 
         return $data;
     }
 
-    private function numericValueError(mixed $value, IndicatorDefinition $indicator): ?string
+    private function numericValueError(mixed $value, IndicatorDefinition $indicator, bool $enforceIndicatorBounds = true): ?string
     {
         if (! is_numeric($value)) {
             return 'Enter a numeric target value.';
@@ -184,8 +231,8 @@ class TargetService
             return 'This indicator requires a whole-number target.';
         }
 
-        $minimum = $this->minimumForIndicator($indicator);
-        $maximum = $this->maximumForIndicator($indicator);
+        $minimum = $enforceIndicatorBounds ? $this->minimumForIndicator($indicator) : 0;
+        $maximum = $enforceIndicatorBounds ? $this->maximumForIndicator($indicator) : null;
         if ($minimum !== null && $numericValue < (float) $minimum) {
             return "The target must be at least {$minimum}.";
         }
@@ -204,6 +251,76 @@ class TargetService
         return null;
     }
 
+    public function clear(int $assignmentId, CarbonInterface|string $period, string $source = 'manual'): ?IndicatorTarget
+    {
+        $periodStart = CarbonImmutable::parse($period)->startOfMonth();
+        $target = IndicatorTarget::query()
+            ->where('indicator_assignment_id', $assignmentId)
+            ->where('period_type', 'monthly')
+            ->whereDate('period', $periodStart)
+            ->first();
+
+        if (! $target || ! $target->active) {
+            return $target;
+        }
+
+        return DB::transaction(function () use ($target, $source): IndicatorTarget {
+            $target->update(['active' => false]);
+            $target = $target->fresh();
+            $this->recordRevision($target, 'removed', $source);
+            $this->targetChanges->handle($target, true);
+
+            return $target;
+        });
+    }
+
+    /** @return array<string, bool|float|string|null> */
+    public function snapshot(IndicatorTarget $target): array
+    {
+        return [
+            'target_type' => $target->target_type,
+            'value' => $target->value === null ? null : (float) $target->value,
+            'minimum_value' => $target->minimum_value === null ? null : (float) $target->minimum_value,
+            'maximum_value' => $target->maximum_value === null ? null : (float) $target->maximum_value,
+            'target_numerator' => $target->target_numerator === null ? null : (float) $target->target_numerator,
+            'target_denominator' => $target->target_denominator === null ? null : (float) $target->target_denominator,
+            'status_value' => $target->status_value,
+            'notes' => $target->notes,
+            'active' => (bool) $target->active,
+        ];
+    }
+
+    public function display(?IndicatorTarget $target): string
+    {
+        if (! $target || ! $target->active) {
+            return 'N/A';
+        }
+
+        return match ($target->target_type) {
+            'range' => $this->formatNumber((float) $target->minimum_value).'–'.$this->formatNumber((float) $target->maximum_value),
+            'ratio' => $this->formatNumber((float) $target->target_numerator).'/'.$this->formatNumber((float) $target->target_denominator),
+            'status' => (string) $target->status_value,
+            default => $this->formatNumber((float) $target->value),
+        };
+    }
+
+    private function recordRevision(IndicatorTarget $target, string $action, string $source): void
+    {
+        $target->revisions()->create([
+            'user_id' => Auth::id(),
+            'version' => ($target->revisions()->max('version') ?? 0) + 1,
+            'action' => $action,
+            'source' => $source,
+            ...$this->snapshot($target),
+            'is_demo' => (bool) $target->is_demo,
+        ]);
+    }
+
+    private function formatNumber(float $value): string
+    {
+        return rtrim(rtrim(number_format($value, 2, '.', ','), '0'), '.');
+    }
+
     public function findForPeriod(int $assignmentId, CarbonInterface $period): ?IndicatorTarget
     {
         $assignment = IndicatorAssignment::query()->with('indicator')->findOrFail($assignmentId);
@@ -213,10 +330,9 @@ class TargetService
 
         return IndicatorTarget::query()
             ->where('indicator_assignment_id', $assignmentId)
-            ->where('period_type', $assignment->indicator->frequency)
+            ->where('period_type', 'monthly')
             ->where('active', true)
-            ->whereDate('period', '<=', $period)
-            ->whereDate('period_end', '>=', $period)
+            ->whereDate('period', CarbonImmutable::instance($period)->startOfMonth())
             ->first();
     }
 }

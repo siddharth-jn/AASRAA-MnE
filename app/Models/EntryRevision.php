@@ -25,6 +25,11 @@ class EntryRevision extends ImpactModel
         return $this->belongsTo(IndicatorEntry::class, 'indicator_entry_id');
     }
 
+    public function supersededRevision(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'supersedes_revision_id');
+    }
+
     public function definitionVersion(): BelongsTo
     {
         return $this->belongsTo(IndicatorDefinitionVersion::class, 'indicator_definition_version_id');

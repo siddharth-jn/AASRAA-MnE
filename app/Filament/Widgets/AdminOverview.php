@@ -56,7 +56,7 @@ class AdminOverview extends StatsOverviewWidget
                 ->descriptionIcon('heroicon-m-eye')
                 ->url(UserResource::getUrl()),
             Stat::make('Active programmes', Project::query()->where('active', true)->count())
-                ->description('Programmes used for monitoring')
+                ->description('Manage programme settings and project assignments')
                 ->descriptionIcon('heroicon-m-rectangle-stack')
                 ->url(ProjectResource::getUrl()),
             Stat::make('Active projects', Centre::query()->where('active', true)->count())
@@ -67,7 +67,7 @@ class AdminOverview extends StatsOverviewWidget
                 ->description('Definitions currently in use')
                 ->descriptionIcon('heroicon-m-chart-bar')
                 ->url(IndicatorDefinitionResource::getUrl()),
-            Stat::make('Pending approvals', IndicatorEntry::query()->whereIn('status', WorkflowStatus::pending())->count())
+            Stat::make('Pending approvals', IndicatorEntry::query()->targetBacked()->whereIn('status', WorkflowStatus::pending())->count())
                 ->description('Submitted records awaiting review')
                 ->descriptionIcon('heroicon-m-clock'),
         ];

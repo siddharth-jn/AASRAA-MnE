@@ -147,6 +147,65 @@ class AuthoritativeProjectSyncTest extends TestCase
         $this->assertDatabaseMissing('centres', ['source_project_id' => 999]);
     }
 
+    public function test_preview_matches_by_permanent_source_id_and_highlights_a_name_change(): void
+    {
+        $programme = $this->createProject('Street Smart', 'PRG-01');
+        $centre = Centre::create([
+            'source_project_id' => 70,
+            'code' => 'ORG-70',
+            'name' => 'Old project name',
+            'type' => 'Mobile Learning Unit',
+            'region' => 'Not specified',
+            'source_program' => 'Mobile Learning Centre',
+            'source_status' => 'Active',
+            'source_timing_slot' => 'Morning',
+            'source_donor_id' => 3,
+            'source_donor_name' => 'Example donor',
+            'active' => true,
+        ]);
+        $centre->projects()->attach($programme, [
+            'is_demo' => false,
+            'provenance' => 'organisation database programme mapping',
+        ]);
+        $sourceProject = $this->sourceProject(70, 'New project name', 'Mobile Learning Centre');
+
+        $preview = app(AuthoritativeProjectSyncService::class)->preview([$sourceProject], [$sourceProject]);
+
+        $this->assertSame(0, $preview['created']);
+        $this->assertSame(1, $preview['updated']);
+        $this->assertFalse($preview['blocked']);
+        $this->assertSame('Updated project', $preview['changes'][0]['type']);
+        $this->assertContains([
+            'field' => 'Name',
+            'before' => 'Old project name',
+            'after' => 'New project name',
+        ], $preview['changes'][0]['details']);
+    }
+
+    public function test_preview_highlights_deactivation_without_deleting_the_local_project(): void
+    {
+        Centre::create([
+            'source_project_id' => 34,
+            'code' => 'ORG-34',
+            'name' => 'GPS Araghar',
+            'type' => 'Partner School',
+            'region' => 'Not specified',
+            'source_status' => 'Active',
+            'active' => true,
+        ]);
+        $inactiveSourceProject = $this->sourceProject(34, 'GPS Araghar', 'Mainstream - SQEP');
+        $inactiveSourceProject->setAttribute('status', 'Inactive');
+
+        $preview = app(AuthoritativeProjectSyncService::class)->preview([], [$inactiveSourceProject]);
+
+        $this->assertSame(1, $preview['status_updates']);
+        $this->assertSame('Deactivated project', $preview['changes'][0]['type']);
+        $this->assertDatabaseHas('centres', [
+            'source_project_id' => 34,
+            'active' => true,
+        ]);
+    }
+
     private function createProject(string $name, string $code): Project
     {
         $programme = Programme::create([

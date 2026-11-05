@@ -77,7 +77,7 @@ class ShowcaseSeeder extends Seeder
             DB::transaction(function () use ($administrator, $endMonth, $projects, $showcaseYear): void {
                 $this->seedWorkflowUsers($projects);
                 $this->seedCoreReporting($administrator, $projects, $showcaseYear, $endMonth);
-                $this->seedShowcaseScenarios($administrator, $projects, $showcaseYear, $endMonth);
+                $this->seedShowcaseScenarios($projects, $showcaseYear);
                 $this->seedNotificationsAndAudit($administrator, $showcaseYear);
             });
         } catch (Throwable $exception) {
@@ -122,26 +122,41 @@ class ShowcaseSeeder extends Seeder
     private function seedCoreReporting(User $administrator, Collection $projects, int $year, int $endMonth): void
     {
         $dataTypes = ['integer', 'decimal', 'percentage', 'ratio', 'calculated', 'integer', 'decimal'];
-        $timeAggregations = ['SUM', 'AVERAGE', 'LATEST SNAPSHOT', 'RATIO', 'RATIO', 'UNIQUE COUNT', 'WEIGHTED AVERAGE'];
-        $centreAggregations = ['SUM', 'AVERAGE', 'AVERAGE', 'RATIO', 'RATIO', 'UNIQUE COUNT', 'WEIGHTED AVERAGE'];
+        $timeAggregations = ['SUM', 'AVERAGE', 'LATEST SNAPSHOT', 'RATIO', 'RATIO', 'UNIQUE COUNT', 'AVERAGE'];
+        $centreAggregations = ['SUM', 'AVERAGE', 'AVERAGE', 'RATIO', 'RATIO', 'NON-AGGREGATABLE', 'AVERAGE'];
         $directions = ['higher', 'lower', 'range', 'higher', 'higher', 'higher', 'lower'];
-        $categories = ['Output', 'Outcome', 'KPI', 'Outcome', 'KPI', 'Activity', 'Input'];
+        $categories = ['Output', 'Outcome', null, 'Outcome', null, 'Activity', 'Input'];
+        $names = [
+            'Learning sessions delivered',
+            'Average days absent per learner',
+            'Learners attending at least 80% of sessions',
+            'Residents achieving individual care-plan goals',
+            'Participants achieving employment outcomes',
+            'Distinct community outreach locations visited',
+            'Average delivery cost per learner',
+        ];
+        $units = ['sessions', 'days', '%', '%', '%', 'locations', '₹ per learner'];
 
         foreach ($projects->values() as $projectIndex => $project) {
+            $category = $categories[$projectIndex % count($categories)];
+            if ($category === null) {
+                continue;
+            }
+
             $dataType = $dataTypes[$projectIndex % count($dataTypes)];
             $indicator = $this->createIndicator($project, [
                 'code' => sprintf('SHOWCASE-%d-CORE-%02d', $year, $projectIndex + 1),
-                'name' => 'Monthly programme participation',
+                'name' => $names[$projectIndex % count($names)],
                 'description' => "Synthetic monthly trend for {$project->name}; safe to remove before operational import.",
-                'category' => $categories[$projectIndex % count($categories)],
-                'unit' => in_array($dataType, ['percentage', 'ratio', 'calculated'], true) ? '%' : ($dataType === 'decimal' ? 'average' : 'people'),
+                'category' => $category,
+                'unit' => $units[$projectIndex % count($units)],
                 'data_type' => $dataType,
                 'frequency' => 'monthly',
                 'time_aggregation' => $timeAggregations[$projectIndex % count($timeAggregations)],
                 'centre_aggregation' => $centreAggregations[$projectIndex % count($centreAggregations)],
                 'direction' => $directions[$projectIndex % count($directions)],
                 'target_tracking' => true,
-                'approval_required' => false,
+                'approval_required' => true,
                 'min_value' => 0,
                 'max_value' => in_array($dataType, ['percentage', 'ratio', 'calculated'], true) ? 100 : null,
                 'precision' => $dataType === 'integer' ? 0 : 1,
@@ -162,19 +177,23 @@ class ShowcaseSeeder extends Seeder
                     $period = CarbonImmutable::create($year, $month, 1);
                     $seed = 35 + ($projectIndex * 6) + ($centreIndex % 11) + ($month * 2);
                     $value = $this->valueFor($dataType, $seed);
-                    if ($indicator->time_aggregation === 'WEIGHTED AVERAGE') {
-                        $value['weight'] = 1 + ($centreIndex % 3);
-                    }
                     $this->createTarget($assignment, $period, $indicator->direction, $seed);
+                    $workflowStatus = match (true) {
+                        $centreIndex === 0 && $month === $endMonth && $projectIndex === 0 => WorkflowStatus::PendingSeniorProgrammeLead,
+                        $centreIndex === 0 && $month === $endMonth && in_array($projectIndex, [1, 3], true) => WorkflowStatus::PendingMneHead,
+                        default => WorkflowStatus::FinalApproved,
+                    };
                     $this->createEntry(
                         $assignment,
                         $definitionVersion,
-                        $administrator,
+                        $workflowStatus === WorkflowStatus::FinalApproved ? $administrator : $this->workflowUsers['PROGRAM LEAD'],
                         $period,
-                        WorkflowStatus::FinalApproved,
+                        $workflowStatus,
                         $value,
-                        null,
-                        'Synthetic approved result for interface and trend review.',
+                        $workflowStatus === WorkflowStatus::PendingMneHead ? WorkflowStatus::PendingMneHead : null,
+                        $workflowStatus === WorkflowStatus::FinalApproved
+                            ? 'Synthetic approved result for interface and trend review.'
+                            : 'Synthetic target-backed submission awaiting workflow review.',
                     );
                 }
             }
@@ -182,56 +201,28 @@ class ShowcaseSeeder extends Seeder
     }
 
     /** @param Collection<int, Project> $projects */
-    private function seedShowcaseScenarios(User $administrator, Collection $projects, int $year, int $endMonth): void
+    private function seedShowcaseScenarios(Collection $projects, int $year): void
     {
-        $period = CarbonImmutable::create($year, $endMonth, 1);
-        $previousPeriod = $period->subMonth();
         $scenarios = [
             [
-                'name' => 'Safeguarding checklist completed', 'data_type' => 'boolean', 'category' => 'Milestone', 'unit' => 'yes/no',
-                'frequency' => 'monthly', 'time_aggregation' => 'LATEST SNAPSHOT', 'centre_aggregation' => 'LATEST SNAPSHOT',
-                'status' => WorkflowStatus::Draft, 'value' => ['boolean_value' => true], 'target_tracking' => false,
-            ],
-            [
                 'name' => 'Most recent community event', 'data_type' => 'date', 'category' => 'Activity', 'unit' => 'date',
-                'frequency' => 'quarterly', 'time_aggregation' => 'NON-AGGREGATABLE', 'centre_aggregation' => 'NON-AGGREGATABLE',
-                'status' => WorkflowStatus::PendingSeniorProgrammeLead, 'value' => ['date_value' => $period->addDays(6)->toDateString()], 'target_tracking' => false,
+                'frequency' => 'monthly', 'time_aggregation' => 'NON-AGGREGATABLE', 'centre_aggregation' => 'NON-AGGREGATABLE',
+                'target_tracking' => false,
                 'evidence_required' => true, 'max_files' => 5,
             ],
             [
-                'name' => 'Implementation highlight', 'data_type' => 'text', 'category' => 'Qualitative Indicator', 'unit' => 'summary',
-                'frequency' => 'monthly', 'time_aggregation' => 'NON-AGGREGATABLE', 'centre_aggregation' => 'NON-AGGREGATABLE',
-                'status' => WorkflowStatus::ReturnedForCorrection, 'value' => ['text_value' => 'Attendance improved after family follow-up.'], 'target_tracking' => false,
-            ],
-            [
-                'name' => 'Detailed case narrative', 'data_type' => 'long_text', 'category' => 'Qualitative Indicator', 'unit' => 'narrative',
-                'frequency' => 'half_yearly', 'time_aggregation' => 'NON-AGGREGATABLE', 'centre_aggregation' => 'NON-AGGREGATABLE',
-                'status' => WorkflowStatus::Rejected, 'value' => ['text_value' => 'Synthetic narrative used to demonstrate the rejected review state without containing personal information.'], 'target_tracking' => false,
-            ],
-            [
                 'name' => 'Programme delivery rating', 'data_type' => 'single_select', 'category' => 'Outcome', 'unit' => 'rating',
-                'frequency' => 'quarterly', 'time_aggregation' => 'STATUS', 'centre_aggregation' => 'STATUS',
-                'status' => WorkflowStatus::PendingMneHead, 'value' => ['text_value' => 'On track'], 'target_tracking' => false,
+                'frequency' => 'monthly', 'time_aggregation' => 'STATUS', 'centre_aggregation' => 'STATUS',
+                'target_tracking' => false,
                 'options' => ['At risk', 'On track', 'Complete'],
             ],
             [
                 'name' => 'Support services provided', 'data_type' => 'multi_select', 'category' => 'Output', 'unit' => 'services',
-                'frequency' => 'half_yearly', 'time_aggregation' => 'UNIQUE COUNT', 'centre_aggregation' => 'UNIQUE COUNT',
-                'status' => WorkflowStatus::FinalApproved, 'value' => ['json_value' => ['Education', 'Health referral']], 'target_tracking' => false,
+                'frequency' => 'monthly', 'time_aggregation' => 'UNIQUE COUNT', 'centre_aggregation' => 'UNIQUE COUNT',
+                'target_tracking' => false,
                 'options' => ['Education', 'Nutrition', 'Health referral', 'Counselling'], 'approval_required' => false,
             ],
-            [
-                'name' => 'Annual implementation status', 'data_type' => 'status', 'category' => 'KPI', 'unit' => 'status',
-                'frequency' => 'annual', 'time_aggregation' => 'STATUS', 'centre_aggregation' => 'STATUS',
-                'status' => WorkflowStatus::FinalApproved, 'value' => ['text_value' => 'On track'], 'target_tracking' => true,
-                'direction' => 'status', 'options' => ['At risk', 'On track', 'Complete'],
-                'evidence_required' => true, 'evidence_review_required' => true, 'max_files' => 3,
-            ],
         ];
-
-        $evidenceRevisions = [];
-        $textScenario = null;
-        $booleanScenario = null;
 
         foreach ($scenarios as $scenarioIndex => $scenario) {
             $project = $projects[$scenarioIndex % $projects->count()];
@@ -249,78 +240,13 @@ class ShowcaseSeeder extends Seeder
                 'direction' => $scenario['direction'] ?? 'higher',
                 'options' => $scenario['options'] ?? null,
             ], $year);
-            $definitionVersion = $indicator->versions()->latest('version')->firstOrFail();
-            $assignment = IndicatorAssignment::query()->create([
+            IndicatorAssignment::query()->create([
                 'indicator_definition_id' => $indicator->id,
                 'centre_id' => $centre->id,
                 'required' => true,
                 'is_demo' => true,
             ]);
-            $action = match ($scenario['status']) {
-                WorkflowStatus::PendingMneHead => WorkflowStatus::PendingMneHead,
-                WorkflowStatus::FinalApproved => ($scenario['approval_required'] ?? true) ? WorkflowStatus::FinalApproved : null,
-                WorkflowStatus::ReturnedForCorrection => WorkflowStatus::ReturnedForCorrection,
-                WorkflowStatus::Rejected => WorkflowStatus::Rejected,
-                default => null,
-            };
-            $revision = $this->createEntry(
-                $assignment,
-                $definitionVersion,
-                $this->workflowUsers['PROGRAM LEAD'],
-                $period,
-                $scenario['status'],
-                $scenario['value'],
-                $action,
-                'Synthetic workflow scenario created for local interface review.',
-            );
-
-            if ($scenario['data_type'] === 'date') {
-                $evidenceRevisions['documents'] = $revision;
-            }
-            if ($scenario['data_type'] === 'status') {
-                $evidenceRevisions['structured'] = $revision;
-                [$targetPeriod, $targetPeriodEnd] = app(IndicatorReportingPeriodService::class)
-                    ->boundaries($period, 'annual');
-                IndicatorTarget::query()->create([
-                    'indicator_assignment_id' => $assignment->id,
-                    'period' => $targetPeriod,
-                    'period_type' => 'annual',
-                    'period_end' => $targetPeriodEnd,
-                    'target_type' => 'status',
-                    'status_value' => 'On track',
-                    'notes' => 'Synthetic annual status target.',
-                    'active' => true,
-                    'is_demo' => true,
-                ]);
-            }
-            if ($scenario['data_type'] === 'text') {
-                $textScenario = [$assignment, $definitionVersion];
-            }
-            if ($scenario['data_type'] === 'boolean') {
-                $booleanScenario = [$assignment, $definitionVersion];
-            }
         }
-
-        if ($booleanScenario) {
-            [$assignment, $definitionVersion] = $booleanScenario;
-            $this->createEntry(
-                $assignment,
-                $definitionVersion,
-                $administrator,
-                $previousPeriod,
-                WorkflowStatus::FinalApproved,
-                ['value_state' => 'not_applicable'],
-                WorkflowStatus::FinalApproved,
-                'Not applicable is intentionally represented once.',
-            );
-        }
-
-        if ($textScenario) {
-            [$assignment, $definitionVersion] = $textScenario;
-            $this->createCorrectedEntry($assignment, $definitionVersion, $this->workflowUsers['PROGRAM LEAD'], $previousPeriod);
-        }
-
-        $this->attachEvidence($administrator, $evidenceRevisions, $year);
     }
 
     /** @param array<string, mixed> $attributes */
@@ -362,15 +288,22 @@ class ShowcaseSeeder extends Seeder
 
     private function createTarget(IndicatorAssignment $assignment, CarbonImmutable $period, string $direction, float $seed): void
     {
+        $indicator = $assignment->indicator;
+        $isRatio = in_array($indicator->data_type, ['ratio', 'calculated'], true)
+            || ($indicator->data_type === 'percentage' && $indicator->calculation_method === 'ratio_percentage');
+        $targetValue = $direction === 'lower' ? max(5, $seed - 8) : $seed + 4;
+
         IndicatorTarget::query()->create([
             'indicator_assignment_id' => $assignment->id,
             'period' => $period,
             'period_type' => 'monthly',
             'period_end' => $period->endOfMonth(),
-            'target_type' => $direction === 'range' ? 'range' : 'numeric',
-            'value' => $direction === 'range' ? null : ($direction === 'lower' ? max(5, $seed - 8) : $seed + 4),
+            'target_type' => $isRatio ? 'ratio' : ($direction === 'range' ? 'range' : 'numeric'),
+            'value' => $direction === 'range' ? null : $targetValue,
             'minimum_value' => $direction === 'range' ? max(0, $seed - 5) : null,
             'maximum_value' => $direction === 'range' ? $seed + 5 : null,
+            'target_numerator' => $isRatio ? $targetValue : null,
+            'target_denominator' => $isRatio ? 100 : null,
             'notes' => 'Synthetic monthly target.',
             'active' => true,
             'is_demo' => true,

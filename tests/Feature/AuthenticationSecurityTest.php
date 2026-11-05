@@ -18,6 +18,18 @@ class AuthenticationSecurityTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_forwarded_https_requests_generate_secure_login_urls(): void
+    {
+        $this->withServerVariables([
+            'HTTP_HOST' => 'preview.example.test',
+        ])->withHeaders([
+            'X-Forwarded-Proto' => 'https',
+        ])->get(route('login', absolute: false))
+            ->assertOk()
+            ->assertSee('https://localhost:8000/login', escape: false)
+            ->assertDontSee('http://localhost:8000', escape: false);
+    }
+
     public function test_administration_uses_the_main_login_and_remains_admin_only(): void
     {
         $coordinator = User::factory()->create([

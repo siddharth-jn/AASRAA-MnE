@@ -23,12 +23,19 @@ abstract class ImpactModel extends Model
     private static function writeAuditLog(Model $model, string $action): void
     {
         if (Auth::check() && ! $model instanceof AuditLog) {
+            $changedAttributes = collect($model->getChanges())->except(['password', 'remember_token']);
+            $changes = $action === 'created'
+                ? ['after' => $changedAttributes->all()]
+                : [
+                    'before' => $changedAttributes->keys()->mapWithKeys(fn (string $key): array => [$key => $model->getOriginal($key)])->all(),
+                    'after' => $changedAttributes->all(),
+                ];
             AuditLog::create([
                 'user_id' => Auth::id(),
                 'action' => $action,
                 'subject_type' => $model::class,
                 'subject_id' => $model->getKey(),
-                'changes' => collect($model->getChanges())->except(['password', 'remember_token'])->all(),
+                'changes' => $changes,
                 'is_demo' => (bool) ($model->is_demo ?? false),
             ]);
         }

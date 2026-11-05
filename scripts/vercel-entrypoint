@@ -1,0 +1,57 @@
+#!/bin/sh
+set -eu
+
+preview_root=/tmp/aasraa-preview
+database_path="$preview_root/database.sqlite"
+storage_path="$preview_root/storage"
+evidence_archive=/var/www/html/database/vercel-evidence.zip
+
+mkdir -p \
+    "$storage_path/app/private" \
+    "$storage_path/app/public" \
+    "$storage_path/framework/cache/data" \
+    "$storage_path/framework/sessions" \
+    "$storage_path/framework/testing" \
+    "$storage_path/framework/views" \
+    "$storage_path/logs"
+
+if [ -n "${DATABASE_URL_UNPOOLED:-${POSTGRES_URL_NON_POOLING:-${DATABASE_URL:-}}}" ]; then
+    export DB_CONNECTION=pgsql
+    database_url="${DATABASE_URL_UNPOOLED:-${POSTGRES_URL_NON_POOLING:-$DATABASE_URL}}"
+    export DB_URL="$database_url"
+    export DB_SSLMODE=require
+else
+    if [ ! -f "$database_path" ]; then
+        touch "$database_path"
+    fi
+
+    export DB_CONNECTION=sqlite
+    export DB_DATABASE="$database_path"
+fi
+
+export LARAVEL_STORAGE_PATH="$storage_path"
+export AUTHORITATIVE_PROJECT_SYNC_ENABLED=false
+
+if [ -f "$evidence_archive" ]; then
+    php -r '$archive = new ZipArchive(); if ($archive->open($argv[1]) !== true || ! $archive->extractTo($argv[2])) { fwrite(STDERR, "Unable to restore packaged evidence files.\n"); exit(1); } $archive->close();' \
+        "$evidence_archive" \
+        "$storage_path/app/private"
+fi
+
+if [ -z "${APP_KEY:-}" ]; then
+    APP_KEY="base64:$(php -r 'echo base64_encode(random_bytes(32));')"
+    export APP_KEY
+fi
+
+if [ -n "${VERCEL_URL:-}" ]; then
+    APP_URL="https://$VERCEL_URL"
+    export APP_URL
+fi
+
+if [ -n "${database_url:-}" ]; then
+    php artisan impact:initialize-vercel-preview --no-interaction &
+else
+    php artisan impact:initialize-vercel-preview --no-interaction
+fi
+
+exec php artisan serve --host=0.0.0.0 --port="${PORT:-3000}" --no-interaction

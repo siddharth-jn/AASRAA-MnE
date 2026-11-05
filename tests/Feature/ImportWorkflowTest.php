@@ -147,13 +147,13 @@ class ImportWorkflowTest extends TestCase
         $this->assertSame('duplicate', $batch->rows[1]->status);
     }
 
-    public function test_authorized_user_can_open_import_history_and_download_template(): void
+    public function test_achievement_import_routes_are_disabled_because_excel_import_is_targets_only(): void
     {
         [$user, $project] = $this->configuredProject();
 
-        $this->actingAs($user)->get(route('imports.index'))->assertOk();
-        $this->actingAs($user)->get(route('imports.template', [$project, 'format' => 'csv']))->assertOk();
-        $this->actingAs($user)->get(route('imports.template', [$project, 'format' => 'xlsx']))->assertOk();
+        $this->actingAs($user)->get(route('imports.index'))->assertForbidden();
+        $this->actingAs($user)->get(route('imports.template', [$project, 'format' => 'csv']))->assertForbidden();
+        $this->actingAs($user)->get(route('imports.template', [$project, 'format' => 'xlsx']))->assertForbidden();
     }
 
     /** @return array{User, Project, IndicatorAssignment} */

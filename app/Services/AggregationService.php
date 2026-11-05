@@ -24,7 +24,8 @@ class AggregationService
             'WEIGHTED AVERAGE' => $this->weightedAverage($records),
             'RATIO' => $this->ratio($records),
             'STATUS' => array_count_values(array_values(array_filter(array_column($records, 'status')))),
-            'NON-AGGREGATABLE', 'UNIQUE COUNT' => null,
+            'UNIQUE COUNT' => end($records)['value'] ?? null,
+            'NON-AGGREGATABLE' => null,
             default => throw new InvalidArgumentException("Unsupported aggregation method: {$method}"),
         };
     }

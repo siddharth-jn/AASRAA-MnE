@@ -2,7 +2,6 @@
 
 namespace App\Filament\Resources\IndicatorTargets\Tables;
 
-use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
@@ -65,9 +64,7 @@ class IndicatorTargetsTable
                     ->options(['numeric' => 'Numeric target', 'range' => 'Target range', 'status' => 'Expected status']),
             ])
             ->defaultSort('period', 'desc')
-            ->recordActions([
-                EditAction::make(),
-            ])
+            ->recordActions([])
             ->toolbarActions([]);
     }
 }

@@ -30,11 +30,9 @@ class WorkflowReportingTest extends TestCase
     public function test_submission_and_review_create_in_app_notifications(): void
     {
         [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
-        $assignment->indicator->update(['target_tracking' => false]);
-
         $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', [
             'value_state' => 'reported',
-            'numeric_value' => 18,
+            'numeric_value' => 20,
             'notes' => 'Monthly result',
         ], [], true);
 
@@ -50,54 +48,36 @@ class WorkflowReportingTest extends TestCase
         $this->assertDatabaseHas('indicator_entries', ['id' => $entry->id, 'status' => WorkflowStatus::FinalApproved]);
     }
 
-    public function test_monthly_result_can_be_submitted_without_a_target(): void
-    {
-        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
-        $service = app(EntryService::class);
-        $draft = $service->save($submitter, $assignment, '2026-10-01', ['value_state' => 'reported', 'numeric_value' => 20], [], false);
-
-        $this->assertSame(WorkflowStatus::Draft, $draft->status);
-        $this->actingAs($submitter)
-            ->get(route('entries.edit', ['assignment' => $assignment, 'period' => '2026-10']))
-            ->assertOk()
-            ->assertSee('You can still report the result.');
-
-        $submitted = $service->save($submitter, $assignment, '2026-10-01', ['value_state' => 'reported', 'numeric_value' => 20], [], true);
-
-        $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $submitted->status);
-        app(EntryService::class)->review($reviewer, $submitted, 'APPROVED', null);
-        app(EntryService::class)->review($mneHead, $submitted, 'APPROVED', null);
-        $report = app(ReportingService::class)->report($reviewer, CarbonImmutable::parse('2026-10-01'), CarbonImmutable::parse('2026-11-30'))->first();
-        $this->assertSame('Target missing for some periods', $report['target_display']);
-        $this->assertNull($report['variance']);
-        $this->actingAs($submitter)
-            ->get(route('entries.index', ['period_type' => 'monthly', 'anchor' => '2026-11']))
-            ->assertOk()
-            ->assertDontSee('draft only');
-    }
-
-    public function test_quarterly_result_uses_a_target_for_the_same_fiscal_quarter(): void
+    public function test_monthly_result_requires_a_target(): void
     {
         [$assignment, $submitter] = $this->configuredAssignment();
-        $assignment->indicator->update(['frequency' => 'quarterly']);
+        $assignment->targets()->whereDate('period', '2026-10-01')->update(['active' => false]);
+        $this->actingAs($submitter)
+            ->get(route('entries.edit', ['assignment' => $assignment, 'period' => '2026-10']))
+            ->assertStatus(422);
+        $this->actingAs($submitter)
+            ->get(route('entries.index', ['period_type' => 'monthly', 'anchor' => '2026-10']))
+            ->assertOk()
+            ->assertDontSee($assignment->indicator->name);
+    }
+
+    public function test_monthly_result_uses_the_target_for_the_same_month(): void
+    {
+        [$assignment, $submitter] = $this->configuredAssignment();
         app(TargetService::class)->save([
             'indicator_assignment_id' => $assignment->id,
             'period' => '2026-08-15',
-            'period_type' => 'quarterly',
-            'target_type' => 'numeric',
             'value' => 30,
-            'active' => true,
         ]);
 
-        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 30], [], true);
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-08-01', ['value_state' => 'reported', 'numeric_value' => 30], [], true);
 
-        $this->assertSame('2026-07-01', $entry->period->toDateString());
+        $this->assertSame('2026-08-01', $entry->period->toDateString());
         $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $entry->status);
         $this->actingAs($submitter)
-            ->get(route('entries.edit', ['assignment' => $assignment, 'period' => '2026-08', 'period_type' => 'quarterly']))
+            ->get(route('entries.edit', ['assignment' => $assignment, 'period' => '2026-08', 'period_type' => 'monthly']))
             ->assertOk()
-            ->assertSee('Target:')
-            ->assertDontSee('Target missing for this quarterly period');
+            ->assertSee('Target:');
     }
 
     public function test_report_does_not_compare_results_with_only_some_period_targets(): void
@@ -120,10 +100,9 @@ class WorkflowReportingTest extends TestCase
         $target->update(['active' => false]);
         $row = app(ReportingService::class)->report($reviewer, CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-10-31'))->first();
 
-        $this->assertSame(40.0, $row['achievement']);
-        $this->assertNull($row['target']);
-        $this->assertSame('Target missing for some periods', $row['target_display']);
-        $this->assertNull($row['variance']);
+        $this->assertSame(20.0, $row['achievement']);
+        $this->assertSame(20.0, $row['target']);
+        $this->assertSame('20', $row['target_display']);
     }
 
     public function test_all_projects_report_does_not_compare_with_only_one_project_target(): void
@@ -138,6 +117,11 @@ class WorkflowReportingTest extends TestCase
             'indicator_definition_id' => $assignment->indicator_definition_id,
             'centre_id' => $secondCentre->id,
             'required' => true,
+        ]);
+        app(TargetService::class)->save([
+            'indicator_assignment_id' => $secondAssignment->id,
+            'period' => '2026-09-01',
+            'value' => 20,
         ]);
         app(TargetService::class)->save([
             'indicator_assignment_id' => $assignment->id,
@@ -157,9 +141,7 @@ class WorkflowReportingTest extends TestCase
         $row = app(ReportingService::class)->consolidatedReport($reviewer, CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-09-30'))->first();
 
         $this->assertSame(40.0, $row['achievement']);
-        $this->assertNull($row['target']);
-        $this->assertSame('Target missing for some projects', $row['target_display']);
-        $this->assertNull($row['variance']);
+        $this->assertSame(40.0, $row['target']);
     }
 
     public function test_completeness_requires_every_due_indicator(): void
@@ -183,10 +165,10 @@ class WorkflowReportingTest extends TestCase
 
         $summary = app(CompletenessService::class)->summary($submitter, CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-09-30'));
 
-        $this->assertSame(2, $summary['expected']);
+        $this->assertSame(1, $summary['expected']);
         $this->assertSame(1, $summary['reported']);
-        $this->assertSame(1, $summary['missing']);
-        $this->assertSame(50.0, $summary['rate']);
+        $this->assertSame(0, $summary['missing']);
+        $this->assertSame(100.0, $summary['rate']);
     }
 
     public function test_partial_custom_period_excludes_incomplete_months_and_warns_user(): void
@@ -216,8 +198,107 @@ class WorkflowReportingTest extends TestCase
         $this->actingAs($reviewer)->get(route('reports.index'))->assertOk();
         $this->actingAs($reviewer)->get(route('reports.export'))->assertOk();
         $this->actingAs($reviewer)->get(route('reports.excel'))->assertOk();
-        $this->actingAs($reviewer)->get(route('data-quality.index'))->assertOk();
+        $this->actingAs($reviewer)->get('/data-quality')->assertNotFound();
         $this->actingAs($reviewer)->get(route('notifications.index'))->assertOk();
+    }
+
+    public function test_project_page_shows_every_indicator_and_monthly_fill_state(): void
+    {
+        [$assignment, $submitter] = $this->configuredAssignment();
+        $project = $assignment->indicator->project;
+        $centre = $assignment->centre;
+        app(EntryService::class)->save($submitter, $assignment, '2026-10-01', [
+            'value_state' => 'reported',
+            'numeric_value' => 20,
+        ], [], false);
+
+        $targetedIndicator = IndicatorDefinition::create([
+            'project_id' => $project->id,
+            'code' => 'TEST-TARGETED-EMPTY',
+            'name' => 'Participants completing support',
+            'description' => 'Participants completing support during the month.',
+            'category' => 'Output',
+            'unit' => 'people',
+            'data_type' => 'integer',
+            'frequency' => 'monthly',
+            'effective_date' => '2026-04-01',
+            'time_aggregation' => 'SUM',
+            'centre_aggregation' => 'SUM',
+            'target_tracking' => true,
+            'active' => true,
+        ]);
+        $targetedAssignment = IndicatorAssignment::create([
+            'indicator_definition_id' => $targetedIndicator->id,
+            'centre_id' => $centre->id,
+            'required' => true,
+        ]);
+        app(TargetService::class)->save([
+            'indicator_assignment_id' => $targetedAssignment->id,
+            'period' => '2026-10-01',
+            'value' => 25,
+        ]);
+
+        $untargetedIndicator = IndicatorDefinition::create([
+            'project_id' => $project->id,
+            'code' => 'TEST-NO-TARGET',
+            'name' => 'Attendance rate',
+            'description' => 'Monthly attendance rate.',
+            'category' => 'Outcome',
+            'unit' => '%',
+            'data_type' => 'percentage',
+            'frequency' => 'monthly',
+            'effective_date' => '2026-04-01',
+            'time_aggregation' => 'AVERAGE',
+            'centre_aggregation' => 'AVERAGE',
+            'target_tracking' => true,
+            'active' => true,
+        ]);
+        $untargetedAssignment = IndicatorAssignment::create([
+            'indicator_definition_id' => $untargetedIndicator->id,
+            'centre_id' => $centre->id,
+            'required' => true,
+        ]);
+
+        $response = $this->actingAs($submitter)->get(route('projects.show', [
+            'centre' => $centre,
+            'project' => $project->id,
+            'anchor' => '2026-10',
+        ]));
+
+        $response
+            ->assertOk()
+            ->assertSee('Project type')
+            ->assertSee('Assigned staff')
+            ->assertSee('1 of 2 indicators filled')
+            ->assertSee($assignment->indicator->name)
+            ->assertSee($targetedIndicator->name)
+            ->assertSee($untargetedIndicator->name)
+            ->assertSee('Draft')
+            ->assertSee('Not filled')
+            ->assertSee('No target set')
+            ->assertSee('Open')
+            ->assertDontSee('<select id="project"', false)
+            ->assertDontSee('Region')
+            ->assertDontSee('Assigned programmes')
+            ->assertDontSee('No records are available for this period.')
+            ->assertSee(route('entries.edit', [
+                'assignment' => $assignment,
+                'period' => '2026-10',
+                'project' => $project->id,
+                'centre' => $centre->id,
+            ]))
+            ->assertSee(route('entries.edit', [
+                'assignment' => $targetedAssignment,
+                'period' => '2026-10',
+                'project' => $project->id,
+                'centre' => $centre->id,
+            ]))
+            ->assertDontSee(route('entries.edit', [
+                'assignment' => $untargetedAssignment,
+                'period' => '2026-10',
+                'project' => $project->id,
+                'centre' => $centre->id,
+            ]));
     }
 
     public function test_organization_dashboard_shows_current_navigation_and_recent_activity_without_period_reporting(): void
@@ -233,6 +314,7 @@ class WorkflowReportingTest extends TestCase
             ->assertSee(route('programmes.index'), false)
             ->assertSee(route('projects.index'), false)
             ->assertSee(route('approvals.index'), false)
+            ->assertSee(route('approvals.index', ['tab' => 'approved']), false)
             ->assertSee('Recent submissions')
             ->assertSee('Recently approved')
             ->assertDontSee('name="period_type"', false)
@@ -241,18 +323,9 @@ class WorkflowReportingTest extends TestCase
             ->assertDontSee('Key approved outcomes');
     }
 
-    public function test_project_overview_has_no_period_form_and_activity_rows_show_target_and_actual(): void
+    public function test_programme_page_is_a_directory_without_reporting_or_evidence_sections(): void
     {
         [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
-        IndicatorTarget::create([
-            'indicator_assignment_id' => $assignment->id,
-            'period' => '2026-09-01',
-            'period_end' => '2026-09-30',
-            'period_type' => 'monthly',
-            'target_type' => 'numeric',
-            'value' => 20,
-            'active' => true,
-        ]);
         $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18, 'variance_explanation' => 'Attendance was affected by school closures.'], [], true);
         app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
         app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
@@ -261,15 +334,19 @@ class WorkflowReportingTest extends TestCase
             ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'overview']))
             ->assertOk()
             ->assertDontSee('name="period_type"', false)
-            ->assertSee('latest month with programme data');
-
-        $this->actingAs($reviewer)
-            ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'activities', 'period_type' => 'monthly', 'anchor' => '2026-09']))
-            ->assertOk()
+            ->assertDontSee('name="anchor"', false)
+            ->assertSee('Assigned projects')
+            ->assertSee('Indicators')
             ->assertSee('Activities')
-            ->assertDontSee('Activitys')
-            ->assertSee('Actual: 18.00 sessions')
-            ->assertSee('Target: 20 sessions');
+            ->assertSee($assignment->indicator->name)
+            ->assertSee('Code: '.$assignment->indicator->code)
+            ->assertSee('Unit: sessions')
+            ->assertSee('Project level')
+            ->assertDontSee('Enter data')
+            ->assertDontSee('Actual:')
+            ->assertDontSee('Target:')
+            ->assertDontSee('Reporting completion')
+            ->assertDontSee('Evidence files');
     }
 
     public function test_reports_use_project_and_centre_filters_with_project_specific_centre_options(): void
@@ -374,10 +451,116 @@ class WorkflowReportingTest extends TestCase
             ->assertDontSee($restrictedCentre->name);
     }
 
-    public function test_data_entry_is_unavailable_before_an_indicator_reporting_start_month(): void
+    public function test_data_entry_orders_unfilled_records_first_and_supports_donor_and_indicator_filters(): void
     {
         [$assignment, $submitter] = $this->configuredAssignment();
-        $assignment->indicator->update(['effective_date' => '2026-10-01']);
+        $assignment->centre->update(['source_donor_name' => 'First Donor']);
+        app(EntryService::class)->save($submitter, $assignment, '2026-10-01', [
+            'value_state' => 'reported',
+            'numeric_value' => 20,
+        ], [], false);
+
+        $secondCentre = Centre::create([
+            'code' => 'C2',
+            'name' => 'Second donor project',
+            'type' => 'Education Centre',
+            'region' => 'Dehradun',
+            'source_donor_name' => 'Second Donor',
+        ]);
+        $assignment->indicator->project->centres()->attach($secondCentre);
+        $submitter->centres()->attach($secondCentre);
+        $secondIndicator = IndicatorDefinition::create([
+            'project_id' => $assignment->indicator->project_id,
+            'code' => 'SECOND-ENTRY-INDICATOR',
+            'name' => 'Unfilled second indicator',
+            'description' => 'A second reporting obligation.',
+            'category' => 'Output',
+            'unit' => 'people',
+            'data_type' => 'integer',
+            'frequency' => 'monthly',
+            'time_aggregation' => 'SUM',
+            'centre_aggregation' => 'SUM',
+            'active' => true,
+        ]);
+        $secondAssignment = IndicatorAssignment::create([
+            'indicator_definition_id' => $secondIndicator->id,
+            'centre_id' => $secondCentre->id,
+            'required' => true,
+        ]);
+        app(TargetService::class)->save([
+            'indicator_assignment_id' => $secondAssignment->id,
+            'period' => '2026-10-01',
+            'value' => 25,
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('entries.index', ['anchor' => '2026-10']))
+            ->assertOk()
+            ->assertSeeInOrder([$secondIndicator->name, $assignment->indicator->name]);
+
+        $this->actingAs($submitter)
+            ->get(route('entries.index', [
+                'anchor' => '2026-10',
+                'donor' => 'Second Donor',
+                'search' => 'SECOND-ENTRY',
+            ]))
+            ->assertOk()
+            ->assertSee('Second Donor')
+            ->assertSee($secondIndicator->name)
+            ->assertDontSee($assignment->indicator->name)
+            ->assertSee('0 <span class="text-sm font-medium text-slate-400">of 1</span>', false)
+            ->assertSee('Records still missing · click to filter')
+            ->assertSee('entry_status=unfilled', false)
+            ->assertSee('x-on:input.debounce.500ms', false)
+            ->assertDontSee('Reporting completion')
+            ->assertDontSee('Continue entry')
+            ->assertDontSee('Enter value')
+            ->assertDontSee('View entry')
+            ->assertDontSee('>Search</button>', false);
+
+        $this->actingAs($submitter)
+            ->get(route('entries.index', ['anchor' => '2026-10', 'entry_status' => 'unfilled']))
+            ->assertOk()
+            ->assertSee($secondIndicator->name)
+            ->assertDontSee($assignment->indicator->name);
+
+        $this->actingAs($submitter)
+            ->get(route('entries.index', ['anchor' => '2026-10', 'entry_status' => 'entered']))
+            ->assertOk()
+            ->assertSee($assignment->indicator->name)
+            ->assertDontSee($secondIndicator->name);
+
+        $this->actingAs($submitter)
+            ->post(route('entries.store', $secondAssignment), [
+                'period' => '2026-10-01',
+                'numeric_value' => 25,
+                'action' => 'submit',
+                'entry_status' => 'unfilled',
+            ])
+            ->assertRedirect(route('entries.index', ['period' => '2026-10', 'entry_status' => 'unfilled']));
+
+        $this->actingAs($submitter)
+            ->get(route('entries.index', ['anchor' => '2026-10', 'entry_status' => 'unfilled']))
+            ->assertOk()
+            ->assertDontSee($secondIndicator->name)
+            ->assertDontSee($assignment->indicator->name);
+    }
+
+    public function test_empty_data_entry_month_links_to_other_months_with_targets(): void
+    {
+        [, $submitter] = $this->configuredAssignment();
+
+        $this->actingAs($submitter)
+            ->get(route('entries.index', ['anchor' => '2027-01']))
+            ->assertOk()
+            ->assertSee('No indicators have an active target for this month')
+            ->assertSee('Targets are available in:')
+            ->assertSee('Oct 2026');
+    }
+
+    public function test_data_entry_is_unavailable_before_an_indicator_reporting_start_month(): void
+    {
+        [$assignment, $submitter] = $this->configuredAssignment(['effective_date' => '2026-10-01']);
 
         $this->actingAs($submitter)
             ->get(route('entries.index', [
@@ -387,7 +570,7 @@ class WorkflowReportingTest extends TestCase
             ]))
             ->assertOk()
             ->assertDontSee($assignment->indicator->name)
-            ->assertSee('of 0 required');
+            ->assertSee('of 0');
 
         $this->actingAs($submitter)
             ->get(route('entries.edit', ['assignment' => $assignment, 'period' => '2026-09']))
@@ -417,25 +600,21 @@ class WorkflowReportingTest extends TestCase
             ->assertSee($assignment->indicator->name);
     }
 
-    public function test_project_tabs_show_only_the_selected_section_content(): void
+    public function test_programme_page_groups_all_relevant_indicators_by_type(): void
     {
         [$assignment, , $reviewer] = $this->configuredAssignment();
 
         $this->actingAs($reviewer)
             ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'overview']))
             ->assertOk()
-            ->assertSee('Projects')
-            ->assertDontSee('Activity indicators');
-
-        $this->actingAs($reviewer)
-            ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'activities']))
-            ->assertOk()
-            ->assertSee('Activity indicators')
+            ->assertSee('Assigned projects')
+            ->assertSee('Activities')
             ->assertSee($assignment->indicator->name)
-            ->assertDontSee('Projects assigned to this programme');
+            ->assertDontSee('Overview')
+            ->assertDontSee('Evidence files');
     }
 
-    public function test_project_centre_selection_shows_only_indicators_assigned_to_that_centre(): void
+    public function test_programme_page_shows_indicators_for_all_accessible_assigned_projects(): void
     {
         [$assignment, , $reviewer] = $this->configuredAssignment();
         $project = $assignment->indicator->project;
@@ -469,15 +648,11 @@ class WorkflowReportingTest extends TestCase
         $this->actingAs($reviewer)
             ->get(route('programmes.show', [$project, 'section' => 'activities', 'centre' => $assignment->centre_id]))
             ->assertOk()
-            ->assertSee('Showing indicators assigned to '.$assignment->centre->name.'.')
             ->assertSee($assignment->indicator->name)
-            ->assertDontSee($secondIndicator->name)
-            ->assertSee('centre='.$assignment->centre_id, false);
-
-        $this->actingAs($reviewer)
-            ->get(route('programmes.show', [$project, 'section' => 'overview']))
-            ->assertOk()
-            ->assertSee('View indicators for this project');
+            ->assertSee($secondIndicator->name)
+            ->assertSee($assignment->centre->name)
+            ->assertSee($secondCentre->name)
+            ->assertDontSee('name="centre"', false);
     }
 
     public function test_portal_header_uses_a_bell_and_remains_sticky(): void
@@ -488,6 +663,8 @@ class WorkflowReportingTest extends TestCase
             ->get(route('dashboard'))
             ->assertOk()
             ->assertSee('aria-label="Notifications"', false)
+            ->assertSee('<details class="group relative">', false)
+            ->assertSee('<summary aria-label="Open account menu"', false)
             ->assertSee('sticky top-0', false);
     }
 
@@ -507,14 +684,16 @@ class WorkflowReportingTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'evidence']))
             ->assertOk()
-            ->assertSee('proof.jpg');
+            ->assertDontSee('proof.jpg');
         $this->actingAs($outsider)->get(route('evidence.preview', $evidence))->assertForbidden();
     }
 
     public function test_project_consolidation_uses_the_configured_centre_aggregation(): void
     {
-        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
-        $assignment->indicator->update(['time_aggregation' => 'LATEST SNAPSHOT', 'centre_aggregation' => 'SUM', 'target_tracking' => false]);
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment([
+            'time_aggregation' => 'LATEST SNAPSHOT',
+            'centre_aggregation' => 'SUM',
+        ]);
         $secondCentre = Centre::create(['code' => 'C2', 'name' => 'Second centre', 'type' => 'Education Centre', 'region' => 'Dehradun']);
         $assignment->indicator->project->centres()->attach($secondCentre);
         $submitter->centres()->attach($secondCentre);
@@ -525,9 +704,14 @@ class WorkflowReportingTest extends TestCase
             'centre_id' => $secondCentre->id,
             'required' => true,
         ]);
+        app(TargetService::class)->save(['indicator_assignment_id' => $secondAssignment->id, 'period' => '2026-09-01', 'value' => 20]);
 
         foreach ([[$assignment, 35], [$secondAssignment, 20]] as [$centreAssignment, $value]) {
-            $entry = app(EntryService::class)->save($submitter, $centreAssignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => $value], [], true);
+            $entry = app(EntryService::class)->save($submitter, $centreAssignment, '2026-09-01', [
+                'value_state' => 'reported',
+                'numeric_value' => $value,
+                'variance_explanation' => 'The project result differed from its monthly target.',
+            ], [], true);
             app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
             app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
         }
@@ -543,7 +727,7 @@ class WorkflowReportingTest extends TestCase
         $this->assertSame(2, $rows->first()['centre_count']);
 
         $this->actingAs($reviewer)
-            ->get(route('reports.index', ['anchor' => '2026-09']))
+            ->get(route('reports.index', ['anchor' => '2026-09', 'mode' => 'consolidated']))
             ->assertOk()
             ->assertSee('All projects (2)')
             ->assertSee('SUM across projects')
@@ -556,27 +740,28 @@ class WorkflowReportingTest extends TestCase
             ->assertSee('35.00 sessions')
             ->assertDontSee('55.00 sessions');
 
-        $export = $this->actingAs($reviewer)->get(route('reports.export', ['anchor' => '2026-09']));
+        $export = $this->actingAs($reviewer)->get(route('reports.export', ['anchor' => '2026-09', 'mode' => 'consolidated']));
         $export->assertOk();
         $this->assertStringContainsString('All projects (2)', $export->streamedContent());
 
         $this->actingAs($reviewer)
             ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'activities', 'anchor' => '2026-09']))
             ->assertOk()
-            ->assertSee('SUM across projects')
-            ->assertSee('Actual: 55.00 sessions');
+            ->assertSee($assignment->indicator->name)
+            ->assertDontSee('Actual: 55.00 sessions')
+            ->assertDontSee('SUM across projects');
     }
 
     public function test_status_counts_are_combined_across_projects(): void
     {
-        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
-        $assignment->indicator->update([
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment([
             'data_type' => 'status',
             'unit' => 'status',
             'options' => ['Open', 'Closed'],
             'time_aggregation' => 'STATUS',
             'centre_aggregation' => 'STATUS',
-            'target_tracking' => false,
+            'target_tracking' => true,
+            'direction' => 'status',
         ]);
         $secondCentre = Centre::create(['code' => 'C2', 'name' => 'Second centre', 'type' => 'Education Centre', 'region' => 'Dehradun']);
         $assignment->indicator->project->centres()->attach($secondCentre);
@@ -587,9 +772,20 @@ class WorkflowReportingTest extends TestCase
             'centre_id' => $secondCentre->id,
             'required' => true,
         ]);
+        foreach ([$assignment, $secondAssignment] as $statusAssignment) {
+            app(TargetService::class)->save([
+                'indicator_assignment_id' => $statusAssignment->id,
+                'period' => '2026-09-01',
+                'status_value' => 'Open',
+            ]);
+        }
 
         foreach ([[$assignment, 'Open'], [$secondAssignment, 'Closed']] as [$centreAssignment, $status]) {
-            $entry = app(EntryService::class)->save($submitter, $centreAssignment, '2026-09-01', ['value_state' => 'reported', 'text_value' => $status], [], true);
+            $entry = app(EntryService::class)->save($submitter, $centreAssignment, '2026-09-01', [
+                'value_state' => 'reported',
+                'text_value' => $status,
+                'variance_explanation' => $status === 'Open' ? null : 'The project closed during the month.',
+            ], [], true);
             app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
             app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
         }
@@ -600,20 +796,20 @@ class WorkflowReportingTest extends TestCase
         $this->actingAs($reviewer)
             ->get(route('programmes.show', [$assignment->indicator->project, 'section' => 'activities', 'anchor' => '2026-09']))
             ->assertOk()
-            ->assertSee('Open: 1')
-            ->assertSee('Closed: 1');
+            ->assertSee($assignment->indicator->name)
+            ->assertDontSee('Open: 1')
+            ->assertDontSee('Closed: 1');
     }
 
     public function test_editing_an_approved_result_preserves_the_official_revision_until_reapproval(): void
     {
         [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
-        $assignment->indicator->update(['target_tracking' => false]);
-        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 10], [], true);
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 10, 'variance_explanation' => 'Initial reported result.'], [], true);
         app(EntryService::class)->review($reviewer, $entry, 'APPROVED', null);
         app(EntryService::class)->review($mneHead, $entry, 'APPROVED', null);
 
         $entry = app(EntryService::class)->requestAmendment($submitter, $entry->fresh(), 'Correct a transcription mistake.');
-        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 12], [], true);
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 12, 'variance_explanation' => 'Corrected reported result.'], [], true);
         $officialRows = app(ReportingService::class)->report($reviewer, CarbonImmutable::parse('2026-09-01'), CarbonImmutable::parse('2026-09-30'));
 
         $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $entry->status);
@@ -630,9 +826,8 @@ class WorkflowReportingTest extends TestCase
 
     public function test_approval_does_not_require_a_second_evidence_confirmation(): void
     {
-        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment();
-        $assignment->indicator->update(['evidence_review_required' => true, 'target_tracking' => false]);
-        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18], [], true);
+        [$assignment, $submitter, $reviewer, $mneHead] = $this->configuredAssignment(['evidence_review_required' => true]);
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 20], [], true);
 
         $this->actingAs($reviewer)->post(route('approvals.review', $entry), ['action' => 'APPROVED'])->assertSessionHasNoErrors();
         $this->assertSame(WorkflowStatus::PendingMneHead, $entry->fresh()->status);
@@ -643,18 +838,17 @@ class WorkflowReportingTest extends TestCase
 
     public function test_required_evidence_is_still_checked_when_submitting(): void
     {
-        [$assignment, $submitter] = $this->configuredAssignment();
-        $assignment->indicator->update(['evidence_required' => true, 'min_files' => 1]);
+        [$assignment, $submitter] = $this->configuredAssignment(['evidence_required' => true, 'min_files' => 1]);
 
         try {
-            app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18], [], true);
+            app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 20], [], true);
             $this->fail('Submission without required evidence should be rejected.');
         } catch (ValidationException $exception) {
             $this->assertArrayHasKey('evidence', $exception->errors());
         }
 
         Storage::fake((string) config('impact.evidence_disk', 'local'));
-        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 18], [UploadedFile::fake()->create('proof.pdf', 50, 'application/pdf')], true);
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-09-01', ['value_state' => 'reported', 'numeric_value' => 20], [UploadedFile::fake()->create('proof.pdf', 50, 'application/pdf')], true);
 
         $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $entry->status);
         $this->assertCount(1, $entry->currentRevision->evidence);
@@ -676,7 +870,8 @@ class WorkflowReportingTest extends TestCase
     }
 
     /** @return array{IndicatorAssignment, User, User, User} */
-    private function configuredAssignment(): array
+    /** @param array<string, mixed> $indicatorOverrides */
+    private function configuredAssignment(array $indicatorOverrides = []): array
     {
         $submitter = User::factory()->create(['role' => 'PROGRAM LEAD', 'active' => true]);
         $reviewer = User::factory()->create(['role' => 'SENIOR PROGRAM LEAD', 'active' => true]);
@@ -689,7 +884,7 @@ class WorkflowReportingTest extends TestCase
             $user->projects()->attach($project);
             $user->centres()->attach($centre);
         }
-        $indicator = IndicatorDefinition::create([
+        $indicator = IndicatorDefinition::create(array_merge([
             'project_id' => $project->id,
             'code' => 'TEST-1',
             'name' => 'Sessions',
@@ -704,8 +899,20 @@ class WorkflowReportingTest extends TestCase
             'evidence_required' => false,
             'approval_required' => true,
             'active' => true,
-        ]);
+        ], $indicatorOverrides));
         $assignment = IndicatorAssignment::create(['indicator_definition_id' => $indicator->id, 'centre_id' => $centre->id, 'required' => true]);
+        foreach (range(1, 12) as $month) {
+            $period = CarbonImmutable::create(2026, $month, 1);
+            IndicatorTarget::create([
+                'indicator_assignment_id' => $assignment->id,
+                'period' => $period,
+                'period_end' => $period->endOfMonth(),
+                'period_type' => 'monthly',
+                'target_type' => 'numeric',
+                'value' => 20,
+                'active' => true,
+            ]);
+        }
 
         return [$assignment->load(['indicator.project', 'centre']), $submitter, $reviewer, $mneHead];
     }

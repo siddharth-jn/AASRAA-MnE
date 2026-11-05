@@ -26,6 +26,10 @@ class CentresTable
                     ->label('Project name')
                     ->searchable()
                     ->wrap(),
+                TextColumn::make('lead.name')
+                    ->label('Project lead')
+                    ->placeholder('Not assigned')
+                    ->searchable(),
                 TextColumn::make('source_program')
                     ->label('Programme')
                     ->searchable()
@@ -35,21 +39,27 @@ class CentresTable
                     ->placeholder('—')
                     ->searchable(),
                 TextColumn::make('source_donor_name')
-                    ->label('Donor')
+                    ->label('Source donor')
                     ->placeholder('—')
                     ->searchable(),
+                TextColumn::make('donors.name')
+                    ->label('Reporting donors')
+                    ->badge()
+                    ->separator(',')
+                    ->placeholder('Uses source fallback'),
                 TextColumn::make('source_description')
                     ->label('Description')
                     ->placeholder('—')
                     ->limit(60)
-                    ->wrap(),
+                    ->wrap()
+                    ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('source_status')
                     ->label('Status')
                     ->badge()
                     ->color(fn (?string $state): string => $state === 'Active' ? 'success' : 'gray')
                     ->sortable(),
                 TextColumn::make('source_synced_at')
-                    ->label('Last synchronized')
+                    ->label('Imported on')
                     ->dateTime()
                     ->sortable(),
                 TextColumn::make('source_location')

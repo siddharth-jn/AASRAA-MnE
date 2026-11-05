@@ -11,6 +11,7 @@ use App\Models\Project;
 use App\Models\User;
 use App\Services\EntryService;
 use App\Support\WorkflowStatus;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
@@ -50,20 +51,21 @@ class ApprovalWorkflowTest extends TestCase
         $this->assertDatabaseCount('approval_actions', 2);
     }
 
-    public function test_only_mne_head_can_bulk_final_approve(): void
+    public function test_each_reviewer_can_bulk_approve_their_own_stage(): void
     {
         [$assignment, $submitter, $seniorLead, $mneHead] = $this->fixture();
         $entry = app(EntryService::class)->save($submitter, $assignment, '2026-10-01', [
             'value_state' => 'reported',
             'numeric_value' => 100,
         ], [], true);
-        app(EntryService::class)->review($seniorLead, $entry, 'APPROVED', null);
 
         $this->actingAs($seniorLead)->post(route('approvals.bulk'), [
             'selection' => 'selected',
             'entry_ids' => [$entry->id],
             'confirmation' => '1',
-        ])->assertForbidden();
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(WorkflowStatus::PendingMneHead, $entry->fresh()->status);
 
         $this->actingAs($mneHead)->post(route('approvals.bulk'), [
             'selection' => 'selected',
@@ -71,6 +73,27 @@ class ApprovalWorkflowTest extends TestCase
             'confirmation' => '1',
         ])->assertSessionHasNoErrors();
 
+        $this->assertSame(WorkflowStatus::FinalApproved, $entry->fresh()->status);
+    }
+
+    public function test_administrator_can_bulk_approve_each_stage_without_skipping_a_stage(): void
+    {
+        [$assignment, $submitter] = $this->fixture();
+        $administrator = User::factory()->create(['role' => 'ADMIN', 'active' => true]);
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-10-01', [
+            'value_state' => 'reported',
+            'numeric_value' => 100,
+        ], [], true);
+        $payload = [
+            'selection' => 'selected',
+            'entry_ids' => [$entry->id],
+            'confirmation' => '1',
+        ];
+
+        $this->actingAs($administrator)->post(route('approvals.bulk'), $payload)->assertSessionHasNoErrors();
+        $this->assertSame(WorkflowStatus::PendingMneHead, $entry->fresh()->status);
+
+        $this->actingAs($administrator)->post(route('approvals.bulk'), $payload)->assertSessionHasNoErrors();
         $this->assertSame(WorkflowStatus::FinalApproved, $entry->fresh()->status);
     }
 
@@ -86,13 +109,52 @@ class ApprovalWorkflowTest extends TestCase
 
         $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $pendingEntry->status);
 
-        $assignment->indicator->update(['approval_required' => false]);
-        $approvedEntry = app(EntryService::class)->save($administrator, $assignment, '2026-12-01', [
+        $noApprovalIndicator = $assignment->indicator->replicate();
+        $noApprovalIndicator->forceFill([
+            'code' => 'PARTICIPATION-NO-APPROVAL',
+            'approval_required' => false,
+        ])->save();
+        $noApprovalAssignment = IndicatorAssignment::create([
+            'indicator_definition_id' => $noApprovalIndicator->id,
+            'centre_id' => $assignment->centre_id,
+            'required' => true,
+        ]);
+        IndicatorTarget::create([
+            'indicator_assignment_id' => $noApprovalAssignment->id,
+            'period' => '2026-12-01',
+            'period_end' => '2026-12-31',
+            'period_type' => 'monthly',
+            'target_type' => 'numeric',
+            'value' => 100,
+            'active' => true,
+        ]);
+        $approvedEntry = app(EntryService::class)->save($administrator, $noApprovalAssignment, '2026-12-01', [
             'value_state' => 'reported',
             'numeric_value' => 100,
         ], [], true);
 
         $this->assertSame(WorkflowStatus::FinalApproved, $approvedEntry->status);
+    }
+
+    public function test_a_legacy_targetless_submission_is_not_actionable_or_visible_in_approvals(): void
+    {
+        [$assignment, $submitter, $seniorLead] = $this->fixture();
+        $entry = app(EntryService::class)->save($submitter, $assignment, '2026-10-01', [
+            'value_state' => 'reported',
+            'numeric_value' => 100,
+        ], [], true);
+        $assignment->targets()->whereDate('period', '2026-10-01')->update(['active' => false]);
+
+        $this->actingAs($seniorLead)
+            ->get(route('approvals.index'))
+            ->assertOk()
+            ->assertSee('0 pending at your approval stage');
+
+        $this->actingAs($seniorLead)
+            ->post(route('approvals.review', $entry), ['action' => 'APPROVED'])
+            ->assertSessionHasErrors('entry');
+
+        $this->assertSame(WorkflowStatus::PendingSeniorProgrammeLead, $entry->fresh()->status);
     }
 
     /** @return array{IndicatorAssignment, User, User, User} */
@@ -133,6 +195,17 @@ class ApprovalWorkflowTest extends TestCase
             'value' => 100,
             'active' => true,
         ]);
+        foreach (['2026-11-01', '2026-12-01'] as $period) {
+            IndicatorTarget::create([
+                'indicator_assignment_id' => $assignment->id,
+                'period' => $period,
+                'period_end' => CarbonImmutable::parse($period)->endOfMonth(),
+                'period_type' => 'monthly',
+                'target_type' => 'numeric',
+                'value' => 100,
+                'active' => true,
+            ]);
+        }
 
         return [$assignment->load(['indicator.project', 'centre']), $submitter, $seniorLead, $mneHead];
     }

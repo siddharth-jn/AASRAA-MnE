@@ -57,6 +57,10 @@ Never run that command against operational records that were incorrectly marked 
 
 ## Documentation
 
+- [Database dictionary](AASRAA_DATABASE_DICTIONARY.docx)
+- [Hostinger deployment dependencies](AASRAA_HOSTINGER_DEPLOYMENT_DEPENDENCIES.docx)
+- [Comprehensive operating manual](AASRAA_OPERATING_MANUAL.docx)
+- [Vercel production assessment](AASRAA_VERCEL_PRODUCTION_ASSESSMENT.docx)
 - [Architecture](ARCHITECTURE.md)
 - [Database schema](DATABASE_SCHEMA.md)
 - [Features and current scope](FEATURES.md)

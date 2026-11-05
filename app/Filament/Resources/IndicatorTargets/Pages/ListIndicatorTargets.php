@@ -14,8 +14,8 @@ class ListIndicatorTargets extends ListRecords
     {
         return [
             Action::make('setTargets')
-                ->label('Set targets')
-                ->url(IndicatorTargetResource::getUrl('set')),
+                ->label('Open monthly target planner')
+                ->url(route('targets.index')),
         ];
     }
 }

@@ -14,6 +14,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class IndicatorsRelationManager extends RelationManager
 {
@@ -70,7 +71,7 @@ class IndicatorsRelationManager extends RelationManager
             ])
             ->recordActions([
                 EditAction::make()
-                    ->mutateDataUsing(fn (array $data): array => $this->prepareIndicatorData($data))
+                    ->mutateDataUsing(fn (array $data, IndicatorDefinition $record): array => $this->prepareIndicatorData($data, $record))
                     ->after(fn (IndicatorDefinition $record): IndicatorDefinition => $this->completeIndicatorSetup($record)),
             ]);
     }
@@ -79,24 +80,72 @@ class IndicatorsRelationManager extends RelationManager
      * @param  array<string, mixed>  $data
      * @return array<string, mixed>
      */
-    private function prepareIndicatorData(array $data): array
+    private function prepareIndicatorData(array $data, ?IndicatorDefinition $indicator = null): array
     {
-        $setupFields = [
-            'target_centre_ids',
-        ];
-        $this->pendingIndicatorSetup = Arr::only($data, $setupFields);
-        $data = Arr::except($data, $setupFields);
+        $centreIds = collect($data['centres'] ?? $data['target_centre_ids'] ?? $indicator?->centres()->pluck('centres.id') ?? [])
+            ->map(fn (mixed $centreId): int => (int) $centreId)
+            ->filter()
+            ->sort()
+            ->values()
+            ->all();
+        $this->pendingIndicatorSetup = ['centres' => $centreIds, 'target_centre_ids' => $centreIds];
+
+        if ($indicator?->hasHistoricalData()) {
+            $currentCentreIds = $indicator->centres()->pluck('centres.id')->map(fn (mixed $centreId): int => (int) $centreId)->sort()->values()->all();
+            $newScope = $data['reporting_scope'] ?? $indicator->reporting_scope;
+            if ($newScope !== $indicator->reporting_scope || $centreIds !== $currentCentreIds) {
+                throw ValidationException::withMessages([
+                    'centres' => 'Project assignments and reporting level are locked because targets or entries exist. Archive this indicator and create a replacement instead.',
+                ]);
+            }
+        }
+
+        $data = Arr::except($data, ['centres', 'target_centre_ids']);
+        if ($indicator) {
+            $data = array_merge($indicator->only(IndicatorDefinition::HISTORICAL_CONFIGURATION_FIELDS), $data);
+        }
         $data['project_id'] = $this->getOwnerRecord()->getKey();
+
+        if ($indicator?->hasHistoricalData()) {
+            return $data;
+        }
 
         return app(IndicatorService::class)->prepareAndValidate($data);
     }
 
     private function completeIndicatorSetup(IndicatorDefinition $indicator): IndicatorDefinition
     {
-        $centreIds = collect($this->pendingIndicatorSetup['target_centre_ids'] ?? [])
+        $centreIds = collect($this->pendingIndicatorSetup['centres'] ?? $this->pendingIndicatorSetup['target_centre_ids'] ?? [])
             ->map(fn (mixed $centreId): int => (int) $centreId)
             ->filter()
             ->values();
+
+        if ($indicator->isProgrammeScoped()) {
+            if ($indicator->assignments()->whereNotNull('centre_id')->where(function ($query): void {
+                $query->whereHas('entries')->orWhereHas('targets');
+            })->exists()) {
+                throw ValidationException::withMessages([
+                    'reporting_scope' => 'The reporting level cannot be changed after targets or entries exist. Create a new indicator instead.',
+                ]);
+            }
+            $indicator->centres()->sync([]);
+            $indicator->assignments()->firstOrCreate(
+                ['centre_id' => null],
+                ['required' => true, 'is_demo' => (bool) $indicator->is_demo],
+            );
+            $this->pendingIndicatorSetup = [];
+
+            return $indicator;
+        }
+
+        if ($indicator->assignments()->whereNull('centre_id')->where(function ($query): void {
+            $query->whereHas('entries')->orWhereHas('targets');
+        })->exists()) {
+            throw ValidationException::withMessages([
+                'reporting_scope' => 'The reporting level cannot be changed after targets or entries exist. Create a new indicator instead.',
+            ]);
+        }
+        $indicator->assignments()->whereNull('centre_id')->delete();
 
         $indicator->centres()->sync($centreIds->all());
         $this->pendingIndicatorSetup = [];

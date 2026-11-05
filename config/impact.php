@@ -5,9 +5,34 @@ return [
     'email_notifications' => env('EMAIL_NOTIFICATIONS', false),
     'reporting_deadline_day' => env('REPORTING_DEADLINE_DAY', 5),
     'deadline_reminder_days' => env('DEADLINE_REMINDER_DAYS', 3),
+    'authoritative_project_sync_enabled' => env('AUTHORITATIVE_PROJECT_SYNC_ENABLED', false),
     'financial_year_start_month' => 4,
     'evidence_disk' => env('EVIDENCE_DISK', 'local'),
     'evidence_extensions' => ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'docx', 'xlsx', 'csv'],
+    'document_extensions' => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'csv', 'jpg', 'jpeg', 'png'],
+    'document_folders' => [
+        'mou-proposals' => [
+            'label' => 'MOU & Proposals',
+            'description' => 'Partnership, proposal, grant, and due-diligence documents.',
+            'folders' => [
+                'due-diligence' => 'Due Diligence',
+                'mou' => 'MOU',
+                'proposal' => 'Proposal',
+                'grant-letter' => 'Grant Letter',
+                'other' => 'Other documents',
+            ],
+        ],
+        'finance' => [
+            'label' => 'Finance',
+            'description' => 'Financial compliance, reporting, and planning documents.',
+            'folders' => [
+                'utilization-certificates' => 'Utilization Certificates',
+                'audited-financial-reports' => 'Audited Financial Reports',
+                'budgets-financial-proposals' => 'Budgets / Financial Proposals',
+                'other' => 'Other finance documents',
+            ],
+        ],
+    ],
     'variance_explanation_threshold' => 10,
     'authoritative_project_programmes' => [
         'education carts' => 'Street Smart',
@@ -41,9 +66,9 @@ return [
     ],
     'roles' => ['ADMIN', 'ASSISTANT PROGRAM LEAD', 'PROGRAM LEAD', 'SENIOR PROGRAM LEAD', 'M&E HEAD', 'CEO', 'CFO', 'CENTRE COORDINATOR', 'VIEWER'],
     'location_types' => ['Education Centre', 'Partner School', 'Mobile Learning Unit', 'Shelter Home', 'Training Centre', 'Community Location', 'Programme Reporting Region'],
-    'categories' => ['Input', 'Activity', 'Output', 'Outcome', 'KPI', 'Milestone', 'Qualitative Indicator'],
+    'categories' => ['Input', 'Activity', 'Output', 'Outcome'],
     'data_types' => ['integer', 'decimal', 'percentage', 'ratio', 'calculated', 'boolean', 'date', 'text', 'long_text', 'single_select', 'multi_select', 'status'],
     'frequencies' => ['monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'half_yearly' => 'Half-yearly', 'annual' => 'Annual'],
     'target_periods' => ['monthly' => 'Monthly', 'quarterly' => 'Quarterly', 'half_yearly' => 'Half-yearly', 'annual' => 'Annual'],
-    'aggregations' => ['SUM', 'LATEST SNAPSHOT', 'AVERAGE', 'WEIGHTED AVERAGE', 'RATIO', 'UNIQUE COUNT', 'STATUS', 'NON-AGGREGATABLE'],
+    'aggregations' => ['SUM', 'LATEST SNAPSHOT', 'AVERAGE', 'RATIO', 'UNIQUE COUNT', 'STATUS', 'NON-AGGREGATABLE'],
 ];

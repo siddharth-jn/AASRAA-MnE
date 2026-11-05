@@ -1,5 +1,8 @@
 *.log
 .DS_Store
+~$*.docx
+*.sql
+*.sql.gz
 .env
 .env.backup
 .env.production
@@ -22,6 +25,7 @@
 /public/js/filament
 /public/storage
 /storage/*.key
+/database/*.zip
 /storage/pail
 /vendor
 _ide_helper.php

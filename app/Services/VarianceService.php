@@ -50,7 +50,7 @@ class VarianceService
 
         return [
             'percentage' => round($percentage, 4),
-            'flagged' => abs($percentage) >= (float) config('impact.variance_explanation_threshold', 10),
+            'flagged' => abs($percentage) > (float) config('impact.variance_explanation_threshold', 10),
         ];
     }
 }

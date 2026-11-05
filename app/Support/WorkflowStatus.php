@@ -16,6 +16,10 @@ class WorkflowStatus
 
     public const Rejected = 'REJECTED';
 
+    public const ReEntryRequired = 'RE-ENTRY REQUIRED';
+
+    public const TargetRemoved = 'TARGET REMOVED';
+
     /** @return array<int, string> */
     public static function pending(): array
     {
@@ -29,6 +33,8 @@ class WorkflowStatus
             self::PendingMneHead => 'Pending M&E Head',
             self::FinalApproved => 'Final approved',
             self::ReturnedForCorrection => 'Returned for correction',
+            self::ReEntryRequired => 'Re-entry required',
+            self::TargetRemoved => 'Target removed',
             default => str($status)->lower()->headline()->toString(),
         };
     }

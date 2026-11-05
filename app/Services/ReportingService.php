@@ -7,6 +7,7 @@ use App\Models\IndicatorEntry;
 use App\Models\IndicatorTarget;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class ReportingService
@@ -15,7 +16,7 @@ class ReportingService
         private readonly ScopeService $scope,
         private readonly AggregationService $aggregation,
         private readonly IndicatorService $indicators,
-        private readonly IndicatorReportingPeriodService $periods,
+        private readonly DonorService $donors,
     ) {}
 
     /** @return Collection<int, array<string, mixed>> */
@@ -33,62 +34,79 @@ class ReportingService
             return collect();
         }
 
-        $query = $this->scope->entries($user)
-            ->whereNotNull('approved_revision_id')
-            ->whereBetween('period', [$start, $end])
-            ->with(['assignment.indicator.project', 'assignment.centre', 'approvedRevision']);
-        if ($projectId) {
-            $query->whereHas('assignment.indicator', fn ($builder) => $builder->where('project_id', $projectId));
-        }
-        if ($centreId) {
-            $query->whereHas('assignment', fn ($builder) => $builder->where('centre_id', $centreId));
-        }
-        if ($indicatorId) {
-            $query->whereHas('assignment', fn ($builder) => $builder->where('indicator_definition_id', $indicatorId));
-        }
-        if ($category) {
-            $query->whereHas('assignment.indicator', fn ($builder) => $builder->where('category', $category));
-        }
-        if ($donor) {
-            $query->whereHas('assignment.centre', fn ($builder) => $builder->where('source_donor_name', $donor));
-        }
+        $assignmentIds = $this->scope->assignments($user)
+            ->whereHas('indicator', function (Builder $query) use ($projectId, $indicatorId, $category): void {
+                $query->where('active', true)->where('frequency', 'monthly');
+                if ($projectId) {
+                    $query->where('project_id', $projectId);
+                }
+                if ($indicatorId) {
+                    $query->whereKey($indicatorId);
+                }
+                if ($category) {
+                    $query->where('category', $category);
+                }
+            })
+            ->when($centreId, fn (Builder $query): Builder => $query->where('centre_id', $centreId))
+            ->when($donor, fn (Builder $query): Builder => $this->donors->applyCentreFilter($query, $donor, $start, $end))
+            ->select('indicator_assignments.id');
 
-        $entries = $query->get();
         $targets = IndicatorTarget::query()
-            ->whereIn('indicator_assignment_id', $entries->pluck('indicator_assignment_id')->unique())
+            ->whereIn('indicator_assignment_id', $assignmentIds)
+            ->where('period_type', 'monthly')
             ->where('active', true)
-            ->whereDate('period', '<=', $end)
-            ->whereDate('period_end', '>=', $start)
-            ->get()
-            ->groupBy('indicator_assignment_id');
+            ->whereBetween('period', [$start->startOfMonth(), $end->endOfMonth()])
+            ->with(['assignment.indicator.project', 'assignment.centre.donorAssignments.donor'])
+            ->orderBy('period')
+            ->get();
 
-        return $entries
-            ->groupBy(fn (IndicatorEntry $entry): string => $entry->assignment->indicator->id.'-'.$entry->assignment->centre_id)
-            ->map(function (Collection $group) use ($targets, $start, $end): array {
-                /** @var IndicatorEntry $first */
-                $first = $group->first();
-                $indicator = $first->assignment->indicator;
-                $records = $group->sortBy('period')->map(fn (IndicatorEntry $entry): array => [
-                    'value' => $entry->approvedRevision->numeric_value ?? ($entry->approvedRevision->boolean_value === null ? null : (int) $entry->approvedRevision->boolean_value),
-                    'numerator' => $entry->approvedRevision->numerator,
-                    'denominator' => $entry->approvedRevision->denominator,
-                    'weight' => $entry->approvedRevision->weight,
-                    'status' => $entry->approvedRevision->text_value,
-                ])->all();
+        $entries = IndicatorEntry::query()
+            ->whereIn('indicator_assignment_id', $targets->pluck('indicator_assignment_id')->unique())
+            ->whereBetween('period', [$start->startOfMonth(), $end->endOfMonth()])
+            ->with(['approvedRevision', 'currentRevision'])
+            ->get()
+            ->keyBy(fn (IndicatorEntry $entry): string => $entry->indicator_assignment_id.'-'.$entry->period->format('Y-m-d'));
+
+        return $targets
+            ->groupBy('indicator_assignment_id')
+            ->map(function (Collection $assignmentTargets) use ($entries): array {
+                /** @var IndicatorTarget $firstTarget */
+                $firstTarget = $assignmentTargets->first();
+                $assignment = $firstTarget->assignment;
+                $indicator = $assignment->indicator;
+                $approvedEntries = collect();
+                $records = [];
+
+                foreach ($assignmentTargets as $target) {
+                    $entry = $entries->get($assignment->id.'-'.$target->period->format('Y-m-d'));
+                    if (! $entry?->approvedRevision) {
+                        continue;
+                    }
+
+                    $revision = $entry->approvedRevision;
+                    $approvedEntries->push($entry);
+                    $records[] = [
+                        'value' => $revision->numeric_value ?? ($revision->boolean_value === null ? null : (int) $revision->boolean_value),
+                        'numerator' => $revision->numerator,
+                        'denominator' => $revision->denominator,
+                        'weight' => $revision->weight,
+                        'status' => $revision->text_value,
+                    ];
+                }
+
                 $achievement = $this->aggregation->aggregate($records, $indicator->time_aggregation);
-                $matchingTargets = $indicator->target_tracking
-                    ? $targets->get($first->indicator_assignment_id, collect())->where('period_type', $indicator->frequency)
-                    : collect();
-                $hasMissingTarget = $indicator->target_tracking && $this->hasMissingTarget($indicator, $matchingTargets, $start, $end);
-                $targetData = $hasMissingTarget
-                    ? $this->missingTarget('Target missing for some periods')
-                    : $this->aggregateTargets($matchingTargets, $indicator->time_aggregation);
+                $targetData = $this->aggregateTargets($assignmentTargets, $indicator->time_aggregation);
                 $performance = $this->performance($achievement, $targetData, $indicator->direction);
+                $expectedMonths = $assignmentTargets->count();
+                $approvedMonths = $approvedEntries->count();
+                $donorNames = $this->donors->namesForPeriod($assignment->centre, $assignmentTargets->min('period'), $assignmentTargets->max('period_end'));
 
                 return [
                     'indicator' => $indicator,
                     'project' => $indicator->project,
-                    'centre' => $first->assignment->centre,
+                    'centre' => $assignment->centre,
+                    'donor_names' => $donorNames,
+                    'donor_display' => $donorNames->join(', ') ?: 'Not specified',
                     'achievement' => $achievement,
                     'target' => $targetData['value'],
                     'target_data' => $targetData,
@@ -96,19 +114,31 @@ class ReportingService
                     'variance' => $performance['variance'],
                     'achievement_percentage' => $performance['percentage'],
                     'performance_status' => $performance['status'],
-                    'variance_explanations' => $group->pluck('approvedRevision.variance_explanation')->filter()->unique()->values(),
-                    'months' => $group->count(),
-                    'status' => 'FINAL APPROVED',
+                    'variance_explanations' => $approvedEntries->pluck('approvedRevision.variance_explanation')->filter()->unique()->values(),
+                    'months' => $approvedMonths,
+                    'expected_months' => $expectedMonths,
+                    'approved_months' => $approvedMonths,
+                    'status' => $approvedMonths === $expectedMonths ? 'FINAL APPROVED' : "INCOMPLETE {$approvedMonths}/{$expectedMonths}",
                     'numerator' => collect($records)->sum('numerator'),
                     'denominator' => collect($records)->sum('denominator'),
                     'weight' => collect($records)->sum('weight'),
-                    'trend' => $group->sortBy('period')->map(fn (IndicatorEntry $entry): array => [
-                        'period' => $entry->period->format('Y-m-d'),
-                        'value' => $entry->approvedRevision->numeric_value,
-                    ])->values(),
+                    'scope' => $indicator->reporting_scope ?? 'project',
+                    'trend' => $assignmentTargets->map(function (IndicatorTarget $target) use ($entries, $assignment): array {
+                        $entry = $entries->get($assignment->id.'-'.$target->period->format('Y-m-d'));
+
+                        return [
+                            'period' => $target->period->format('Y-m-d'),
+                            'value' => $entry?->approvedRevision?->numeric_value,
+                        ];
+                    })->values(),
                 ];
             })
-            ->sortBy(fn (array $row): string => $row['project']->name.$row['centre']->name.$row['indicator']->name)
+            ->sortBy(fn (array $row): string => implode('|', [
+                $row['project']->name,
+                $row['centre']?->name ?? ' Programme level',
+                str_pad((string) $this->categoryOrder($row['indicator']->category), 2, '0', STR_PAD_LEFT),
+                $row['indicator']->name,
+            ]))
             ->values();
     }
 
@@ -127,7 +157,16 @@ class ReportingService
             ->map(function (Collection $rows) use ($donor): array {
                 $first = $rows->first();
                 $indicator = $first['indicator'];
-                $method = array_key_exists($indicator->centre_aggregation, $this->indicators->acrossProjectOptions($indicator->data_type))
+                if (($indicator->reporting_scope ?? 'project') === 'programme') {
+                    return array_replace($first, [
+                        'centre' => null,
+                        'centre_count' => null,
+                        'donor_display' => 'Programme level',
+                        'across_project_method' => 'NON-AGGREGATABLE',
+                    ]);
+                }
+
+                $method = array_key_exists($indicator->centre_aggregation, $this->indicators->acrossProjectOptions($indicator->data_type, $indicator->calculation_method))
                     ? $indicator->centre_aggregation
                     : 'NON-AGGREGATABLE';
                 $records = $rows->map(fn (array $row): array => [
@@ -148,13 +187,15 @@ class ReportingService
                     : $this->aggregation->aggregate($records, $method);
                 $targetData = $this->consolidateTargets($rows, $method);
                 $performance = $this->performance($achievement, $targetData, $indicator->direction);
+                $expectedMonths = $rows->sum('expected_months');
+                $approvedMonths = $rows->sum('approved_months');
 
                 return array_replace($first, [
                     'centre' => null,
                     'centre_count' => $rows->count(),
-                    'donor_display' => $donor ?? match ($rows->pluck('centre.source_donor_name')->filter()->unique()->count()) {
+                    'donor_display' => $donor ?? match ($rows->flatMap(fn (array $row): Collection => $row['donor_names'])->filter()->unique()->count()) {
                         0 => 'Not specified',
-                        1 => $rows->pluck('centre.source_donor_name')->filter()->first(),
+                        1 => $rows->flatMap(fn (array $row): Collection => $row['donor_names'])->filter()->first(),
                         default => 'Multiple donors',
                     },
                     'across_project_method' => $method,
@@ -165,7 +206,10 @@ class ReportingService
                     'variance' => $performance['variance'],
                     'achievement_percentage' => $performance['percentage'],
                     'performance_status' => $performance['status'],
-                    'months' => $rows->sum('months'),
+                    'months' => $approvedMonths,
+                    'expected_months' => $expectedMonths,
+                    'approved_months' => $approvedMonths,
+                    'status' => $approvedMonths === $expectedMonths ? 'FINAL APPROVED' : "INCOMPLETE {$approvedMonths}/{$expectedMonths}",
                     'numerator' => $rows->sum('numerator'),
                     'denominator' => $rows->sum('denominator'),
                     'weight' => $rows->sum('weight'),
@@ -173,13 +217,36 @@ class ReportingService
                     'trend' => collect(),
                 ]);
             })
-            ->sortBy(fn (array $row): string => $row['indicator']->category.$row['indicator']->name)
+            ->sortBy(fn (array $row): string => implode('|', [
+                $row['project']->name,
+                str_pad((string) $this->categoryOrder($row['indicator']->category), 2, '0', STR_PAD_LEFT),
+                $row['indicator']->name,
+            ]))
             ->values();
     }
 
-    /**
-     * @param  Collection<int, IndicatorTarget>  $targets
-     * @return array{type: string|null, value: float|null, minimum: float|null, maximum: float|null, status: string|null, display: string}
+    /** @param Collection<int, array<string, mixed>> $rows
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function filterByPerformance(Collection $rows, ?string $performance): Collection
+    {
+        if ($performance === null) {
+            return $rows;
+        }
+
+        $label = match ($performance) {
+            'on_track' => 'On track',
+            'needs_attention' => 'Needs attention',
+            'overachiever' => 'Overachiever',
+            'not_assessed' => 'Not assessed',
+            default => null,
+        };
+
+        return $label === null ? $rows : $rows->where('performance_status', $label)->values();
+    }
+
+    /** @param Collection<int, IndicatorTarget> $targets
+     * @return array{type: string|null, value: float|null, minimum: float|null, maximum: float|null, status: string|null, display: string, numerator?: float|null, denominator?: float|null}
      */
     public function summarizeTargets(Collection $targets, IndicatorDefinition $indicator, ?int $expectedAssignmentCount = null): array
     {
@@ -187,26 +254,23 @@ class ReportingService
             return $this->aggregateTargets(collect(), $indicator->time_aggregation);
         }
 
-        $targets = $targets->where('period_type', $indicator->frequency);
+        $targets = $targets->where('period_type', 'monthly')->where('active', true);
         if ($targets->isEmpty()) {
-            return $this->missingTarget('Target missing for this period');
+            return $this->missingTarget('Target not set');
         }
         if ($expectedAssignmentCount !== null && $targets->pluck('indicator_assignment_id')->unique()->count() < $expectedAssignmentCount) {
             return $this->missingTarget('Target missing for some projects');
         }
 
-        $assignmentTargets = $targets
-            ->groupBy('indicator_assignment_id')
-            ->map(fn (Collection $group): array => [
-                'target_data' => $this->aggregateTargets($group, $indicator->time_aggregation),
-            ])
-            ->values();
+        $assignmentTargets = $targets->groupBy('indicator_assignment_id')->map(fn (Collection $group): array => [
+            'target_data' => $this->aggregateTargets($group, $indicator->time_aggregation),
+        ])->values();
 
-        if ($assignmentTargets->count() === 1) {
+        if ($assignmentTargets->count() === 1 || ($indicator->reporting_scope ?? 'project') === 'programme') {
             return $assignmentTargets->first()['target_data'];
         }
 
-        $method = array_key_exists($indicator->centre_aggregation, $this->indicators->acrossProjectOptions($indicator->data_type))
+        $method = array_key_exists($indicator->centre_aggregation, $this->indicators->acrossProjectOptions($indicator->data_type, $indicator->calculation_method))
             ? $indicator->centre_aggregation
             : 'NON-AGGREGATABLE';
 
@@ -214,20 +278,33 @@ class ReportingService
     }
 
     /** @param Collection<int, IndicatorTarget> $targets
-     * @return array{type: string|null, value: float|null, minimum: float|null, maximum: float|null, status: string|null, display: string}
+     * @return array{type: string|null, value: float|null, minimum: float|null, maximum: float|null, status: string|null, display: string, numerator?: float|null, denominator?: float|null}
      */
     private function aggregateTargets(Collection $targets, string $method): array
     {
         if ($targets->isEmpty()) {
-            return ['type' => null, 'value' => null, 'minimum' => null, 'maximum' => null, 'status' => null, 'display' => 'Not set'];
+            return $this->missingTarget('Not set');
         }
 
         $latest = $targets->sortBy('period')->last();
+        if ($latest->target_type === 'ratio') {
+            $numerator = (float) $targets->sum('target_numerator');
+            $denominator = (float) $targets->sum('target_denominator');
+            $value = $denominator > 0 ? $numerator / $denominator * 100 : null;
+
+            return ['type' => 'ratio', 'value' => $value, 'minimum' => null, 'maximum' => null, 'status' => null, 'display' => $this->formatNumber($numerator).'/'.$this->formatNumber($denominator), 'numerator' => $numerator, 'denominator' => $denominator];
+        }
         if ($latest->target_type === 'range') {
-            return ['type' => 'range', 'value' => null, 'minimum' => (float) $latest->minimum_value, 'maximum' => (float) $latest->maximum_value, 'status' => null, 'display' => $latest->minimum_value.'–'.$latest->maximum_value];
+            $minimum = $method === 'SUM' ? (float) $targets->sum('minimum_value') : (float) $latest->minimum_value;
+            $maximum = $method === 'SUM' ? (float) $targets->sum('maximum_value') : (float) $latest->maximum_value;
+
+            return ['type' => 'range', 'value' => null, 'minimum' => $minimum, 'maximum' => $maximum, 'status' => null, 'display' => $this->formatNumber($minimum).'–'.$this->formatNumber($maximum)];
         }
         if ($latest->target_type === 'status') {
-            return ['type' => 'status', 'value' => null, 'minimum' => null, 'maximum' => null, 'status' => $latest->status_value, 'display' => (string) $latest->status_value];
+            $statuses = $targets->pluck('status_value')->unique();
+            $status = $statuses->count() === 1 ? $statuses->first() : null;
+
+            return ['type' => 'status', 'value' => null, 'minimum' => null, 'maximum' => null, 'status' => $status, 'display' => $status ?? 'Mixed targets'];
         }
 
         $values = $targets->pluck('value')->filter(fn ($value): bool => $value !== null)->map(fn ($value): float => (float) $value);
@@ -237,33 +314,35 @@ class ReportingService
             default => $values->avg(),
         };
 
-        return ['type' => 'numeric', 'value' => $value, 'minimum' => null, 'maximum' => null, 'status' => null, 'display' => $value === null ? 'Not set' : rtrim(rtrim(number_format($value, 2, '.', ','), '0'), '.')];
+        return ['type' => 'numeric', 'value' => $value, 'minimum' => null, 'maximum' => null, 'status' => null, 'display' => $value === null ? 'Not set' : $this->formatNumber($value)];
     }
 
     /** @param Collection<int, array<string, mixed>> $rows
-     * @return array{type: string|null, value: float|null, minimum: float|null, maximum: float|null, status: string|null, display: string}
+     * @return array{type: string|null, value: float|null, minimum: float|null, maximum: float|null, status: string|null, display: string, numerator?: float|null, denominator?: float|null}
      */
     private function consolidateTargets(Collection $rows, string $method): array
     {
         if ($method === 'NON-AGGREGATABLE') {
-            return ['type' => null, 'value' => null, 'minimum' => null, 'maximum' => null, 'status' => null, 'display' => 'Select a project'];
+            return $this->missingTarget('Select a project');
         }
 
         $targets = $rows->pluck('target_data')->filter(fn (array $target): bool => $target['type'] !== null);
         if ($targets->isEmpty()) {
-            return ['type' => null, 'value' => null, 'minimum' => null, 'maximum' => null, 'status' => null, 'display' => 'Not set'];
+            return $this->missingTarget('Not set');
         }
-        if ($targets->count() !== $rows->count()) {
-            return $this->missingTarget('Target missing for some projects');
-        }
+        if ($method === 'RATIO' || $targets->every(fn (array $target): bool => $target['type'] === 'ratio')) {
+            $numerator = (float) $targets->sum(fn (array $target): float => (float) ($target['numerator'] ?? 0));
+            $denominator = (float) $targets->sum(fn (array $target): float => (float) ($target['denominator'] ?? 0));
+            $value = $denominator > 0 ? $numerator / $denominator * 100 : null;
 
+            return ['type' => 'ratio', 'value' => $value, 'minimum' => null, 'maximum' => null, 'status' => null, 'display' => $this->formatNumber($numerator).'/'.$this->formatNumber($denominator), 'numerator' => $numerator, 'denominator' => $denominator];
+        }
         if ($targets->every(fn (array $target): bool => $target['type'] === 'range')) {
             $minimum = $method === 'SUM' ? $targets->sum('minimum') : $targets->avg('minimum');
             $maximum = $method === 'SUM' ? $targets->sum('maximum') : $targets->avg('maximum');
 
             return ['type' => 'range', 'value' => null, 'minimum' => $minimum, 'maximum' => $maximum, 'status' => null, 'display' => $this->formatNumber($minimum).'–'.$this->formatNumber($maximum)];
         }
-
         if ($targets->every(fn (array $target): bool => $target['type'] === 'status')) {
             $statuses = $targets->pluck('status')->unique();
             $status = $statuses->count() === 1 ? $statuses->first() : null;
@@ -272,12 +351,9 @@ class ReportingService
         }
 
         $values = $targets->pluck('value')->filter(fn ($value): bool => is_numeric($value))->map(fn ($value): float => (float) $value);
-        if ($values->isEmpty()) {
-            return ['type' => null, 'value' => null, 'minimum' => null, 'maximum' => null, 'status' => null, 'display' => 'Not set'];
-        }
         $value = match ($method) {
             'SUM' => $values->sum(),
-            'LATEST SNAPSHOT', 'NON-AGGREGATABLE', 'UNIQUE COUNT', 'STATUS' => $values->last(),
+            'LATEST SNAPSHOT', 'UNIQUE COUNT', 'STATUS' => $values->last(),
             default => $values->avg(),
         };
 
@@ -290,11 +366,11 @@ class ReportingService
         if ($target['type'] === 'range' && is_numeric($achievement)) {
             $met = (float) $achievement >= $target['minimum'] && (float) $achievement <= $target['maximum'];
 
-            return ['variance' => null, 'percentage' => null, 'status' => $met ? 'Met' : 'Outside range'];
+            return ['variance' => null, 'percentage' => null, 'status' => $met ? 'On track' : 'Needs attention'];
         }
         if ($target['type'] === 'status') {
-            if ($target['status'] === null) {
-                return ['variance' => null, 'percentage' => null, 'status' => 'Review'];
+            if ($target['status'] === null || $achievement === null) {
+                return ['variance' => null, 'percentage' => null, 'status' => 'Not assessed'];
             }
             $met = is_string($achievement)
                 ? strcasecmp($achievement, $target['status']) === 0
@@ -303,22 +379,35 @@ class ReportingService
                 $met = (bool) $achievement === ($target['status'] === 'Yes');
             }
 
-            return ['variance' => null, 'percentage' => null, 'status' => $met ? 'Met' : 'Status differs'];
+            return ['variance' => null, 'percentage' => null, 'status' => $met ? 'On track' : 'Needs attention'];
         }
         if (! is_numeric($achievement) || ! is_numeric($target['value'])) {
-            return ['variance' => null, 'percentage' => null, 'status' => $target['type'] === null ? 'No target' : 'Review'];
+            return ['variance' => null, 'percentage' => null, 'status' => 'Not assessed'];
         }
 
         $achievementValue = (float) $achievement;
         $targetValue = (float) $target['value'];
         $variance = $achievementValue - $targetValue;
         $percentage = $targetValue == 0.0 ? null : round((($achievementValue / $targetValue) * 100) - 100, 4);
-        $met = match ($direction) {
-            'lower' => $achievementValue <= $targetValue,
-            default => $achievementValue >= $targetValue,
+        if ($targetValue == 0.0) {
+            $status = match (true) {
+                $achievementValue == 0.0 => 'On track',
+                $direction === 'lower' => 'Needs attention',
+                default => 'Not assessed',
+            };
+
+            return ['variance' => $variance, 'percentage' => null, 'status' => $status];
+        }
+
+        $directionAdjustedPercentage = $direction === 'lower' ? -$percentage : $percentage;
+        $threshold = (float) config('impact.variance_explanation_threshold', 10);
+        $status = match (true) {
+            $directionAdjustedPercentage < -$threshold => 'Needs attention',
+            $directionAdjustedPercentage > $threshold => 'Overachiever',
+            default => 'On track',
         };
 
-        return ['variance' => $variance, 'percentage' => $percentage, 'status' => $met ? 'Met' : ($direction === 'lower' ? 'Above target' : 'Below target')];
+        return ['variance' => $variance, 'percentage' => $percentage, 'status' => $status];
     }
 
     /** @return array{type: null, value: null, minimum: null, maximum: null, status: null, display: string} */
@@ -327,25 +416,15 @@ class ReportingService
         return ['type' => null, 'value' => null, 'minimum' => null, 'maximum' => null, 'status' => null, 'display' => $display];
     }
 
-    /** @param Collection<int, IndicatorTarget> $targets */
-    private function hasMissingTarget(IndicatorDefinition $indicator, Collection $targets, CarbonImmutable $start, CarbonImmutable $end): bool
-    {
-        $period = $this->periods->start($start, $indicator->frequency);
-        while ($period->lte($end)) {
-            if ($period->gte($start->startOfMonth()) && $this->periods->isAvailable($indicator, $period) && ! $targets->contains(
-                fn (IndicatorTarget $target): bool => $target->period->lte($period) && $target->period_end->gte($period),
-            )) {
-                return true;
-            }
-
-            $period = $period->addMonths($this->periods->months($indicator->frequency));
-        }
-
-        return false;
-    }
-
     private function formatNumber(float|int $value): string
     {
         return rtrim(rtrim(number_format($value, 2, '.', ','), '0'), '.');
+    }
+
+    private function categoryOrder(string $category): int
+    {
+        $order = array_search($category, config('impact.categories'), true);
+
+        return $order === false ? 99 : $order;
     }
 }

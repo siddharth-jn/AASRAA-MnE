@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Centres;
 use App\Filament\Resources\Centres\Pages\CreateCentre;
 use App\Filament\Resources\Centres\Pages\EditCentre;
 use App\Filament\Resources\Centres\Pages\ListCentres;
+use App\Filament\Resources\Centres\RelationManagers\DonorAssignmentsRelationManager;
 use App\Filament\Resources\Centres\Schemas\CentreForm;
 use App\Filament\Resources\Centres\Tables\CentresTable;
 use App\Models\Centre;
@@ -20,7 +21,7 @@ class CentreResource extends Resource
 {
     protected static ?string $model = Centre::class;
 
-    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedBuildingOffice2;
 
     protected static ?string $navigationLabel = 'Projects';
 
@@ -45,7 +46,7 @@ class CentreResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            DonorAssignmentsRelationManager::class,
         ];
     }
 

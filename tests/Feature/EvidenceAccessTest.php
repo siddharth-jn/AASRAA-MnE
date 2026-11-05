@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Centre;
 use App\Models\IndicatorAssignment;
 use App\Models\IndicatorDefinition;
+use App\Models\IndicatorTarget;
 use App\Models\Programme;
 use App\Models\Project;
 use App\Models\User;
@@ -59,6 +60,15 @@ class EvidenceAccessTest extends TestCase
             'active' => true,
         ]);
         $assignment = IndicatorAssignment::create(['indicator_definition_id' => $indicator->id, 'centre_id' => $centre->id, 'required' => true]);
+        IndicatorTarget::create([
+            'indicator_assignment_id' => $assignment->id,
+            'period' => '2026-10-01',
+            'period_end' => '2026-10-31',
+            'period_type' => 'monthly',
+            'target_type' => 'numeric',
+            'value' => 12,
+            'active' => true,
+        ]);
 
         return [$assignment->load(['indicator.project', 'centre']), $user];
     }

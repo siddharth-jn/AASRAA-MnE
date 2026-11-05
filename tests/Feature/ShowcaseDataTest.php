@@ -40,57 +40,46 @@ class ShowcaseDataTest extends TestCase
         $this->assertDatabaseCount('programmes', 7);
         $this->assertDatabaseCount('projects', 7);
         $this->assertDatabaseCount('centres', 14);
-        $this->assertSame(14, IndicatorDefinition::query()->where('is_demo', true)->count());
-        $this->assertSame(86, IndicatorEntry::query()->where('is_demo', true)->count());
-        $this->assertDatabaseCount('indicator_targets', 78);
-        $this->assertDatabaseCount('evidence_files', 8);
+        $this->assertSame(8, IndicatorDefinition::query()->where('is_demo', true)->count());
+        $this->assertSame(5 * (now()->month + 1), IndicatorEntry::query()->where('is_demo', true)->count());
+        $this->assertSame(2, IndicatorEntry::query()->where('is_demo', true)->where('status', WorkflowStatus::PendingMneHead)->count());
+        $this->assertDatabaseCount('indicator_targets', 5 * (now()->month + 1));
+        $this->assertDatabaseCount('evidence_files', 0);
         $this->assertDatabaseCount('notifications', 3);
         $this->assertDatabaseCount('import_batches', 0);
 
         $this->assertEqualsCanonicalizing(
-            config('impact.data_types'),
+            ['integer', 'decimal', 'ratio', 'date', 'single_select', 'multi_select'],
             IndicatorDefinition::query()->distinct()->pluck('data_type')->all(),
         );
         $this->assertEqualsCanonicalizing(
-            ['DRAFT', 'FINAL APPROVED', 'PENDING M&E HEAD', 'PENDING SENIOR PL', 'REJECTED', 'RETURNED FOR CORRECTION'],
+            ['FINAL APPROVED', 'PENDING M&E HEAD', 'PENDING SENIOR PL'],
             IndicatorEntry::query()->distinct()->pluck('status')->all(),
         );
+        $this->assertEqualsCanonicalizing(
+            config('impact.categories'),
+            IndicatorDefinition::query()->distinct()->pluck('category')->all(),
+        );
+        $this->assertFalse(IndicatorDefinition::query()->whereIn('category', ['KPI', 'Milestone', 'Qualitative Indicator'])->exists());
+        $this->assertFalse(IndicatorDefinition::query()->where('name', 'Monthly programme participation')->exists());
+        $showcaseNames = IndicatorDefinition::query()->where('is_demo', true)->pluck('name');
+        $this->assertSame($showcaseNames->count(), $showcaseNames->map(fn (string $name): string => mb_strtolower(trim($name)))->unique()->count());
         $this->assertTrue(IndicatorEntry::query()->whereDate('period', '2026-01-01')->where('is_demo', true)->exists());
         $this->assertTrue(IndicatorEntry::query()->whereDate('period', '2026-10-01')->where('is_demo', true)->exists());
-        $this->assertDatabaseHas('entry_revisions', ['value_state' => 'not_applicable', 'is_demo' => true]);
         $this->assertDatabaseHas('indicator_targets', ['target_type' => 'numeric', 'is_demo' => true]);
-        $this->assertDatabaseHas('indicator_targets', ['target_type' => 'range', 'is_demo' => true]);
-        $this->assertDatabaseHas('indicator_targets', ['target_type' => 'status', 'is_demo' => true]);
-
-        $annualIndicator = IndicatorDefinition::query()
-            ->where('code', 'SHOWCASE-2026-TYPE-07')
-            ->firstOrFail();
-        $annualAssignmentId = $annualIndicator->assignments()->value('id');
-
-        $this->assertTrue(
-            IndicatorEntry::query()
-                ->where('indicator_assignment_id', $annualAssignmentId)
-                ->whereDate('period', '2026-04-01')
-                ->where('is_demo', true)
-                ->exists(),
-        );
-        $this->assertTrue(
-            $annualIndicator->targets()
-                ->whereDate('period', '2026-04-01')
-                ->whereDate('period_end', '2027-03-31')
-                ->where('period_type', 'annual')
-                ->where('target_type', 'status')
-                ->where('status_value', 'On track')
-                ->where('indicator_targets.is_demo', true)
-                ->exists(),
-        );
-
-        $evidencePaths = EvidenceFile::query()->pluck('path');
-        $this->assertEqualsCanonicalizing(
-            ['csv', 'docx', 'jpeg', 'jpg', 'pdf', 'png', 'webp', 'xlsx'],
-            $evidencePaths->map(fn (string $path): string => pathinfo($path, PATHINFO_EXTENSION))->all(),
-        );
-        $evidencePaths->each(fn (string $path) => Storage::disk('local')->assertExists($path));
+        $this->assertDatabaseHas('indicator_targets', ['target_type' => 'ratio', 'is_demo' => true]);
+        IndicatorEntry::query()
+            ->where('is_demo', true)
+            ->whereIn('status', WorkflowStatus::pending())
+            ->each(function (IndicatorEntry $entry): void {
+                $this->assertTrue(
+                    $entry->assignment->targets()
+                        ->where('period_type', 'monthly')
+                        ->where('active', true)
+                        ->whereDate('period', $entry->period)
+                        ->exists(),
+                );
+            });
 
         $pendingEntry = IndicatorEntry::query()
             ->where('status', WorkflowStatus::PendingSeniorProgrammeLead)
@@ -106,11 +95,16 @@ class ShowcaseDataTest extends TestCase
                 ->count(),
         );
 
+        $targetAssignmentId = IndicatorDefinition::query()
+            ->where('is_demo', true)
+            ->where('data_type', 'integer')
+            ->firstOrFail()
+            ->assignments()
+            ->value('id');
         $futureTarget = app(TargetService::class)->save([
-            'indicator_assignment_id' => $annualAssignmentId,
+            'indicator_assignment_id' => $targetAssignmentId,
             'period' => '2027-04-01',
-            'period_type' => 'annual',
-            'status_value' => 'Complete',
+            'value' => 42,
             'notes' => null,
             'active' => true,
         ]);

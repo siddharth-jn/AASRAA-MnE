@@ -2,9 +2,7 @@
 
 namespace App\Filament\Resources\IndicatorTargets;
 
-use App\Filament\Resources\IndicatorTargets\Pages\EditIndicatorTarget;
 use App\Filament\Resources\IndicatorTargets\Pages\ListIndicatorTargets;
-use App\Filament\Resources\IndicatorTargets\Pages\PlanIndicatorTargets;
 use App\Filament\Resources\IndicatorTargets\Schemas\IndicatorTargetForm;
 use App\Filament\Resources\IndicatorTargets\Tables\IndicatorTargetsTable;
 use App\Models\IndicatorTarget;
@@ -25,6 +23,11 @@ class IndicatorTargetResource extends Resource
     protected static ?string $modelLabel = 'indicator target';
 
     protected static ?int $navigationSort = 6;
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return false;
+    }
 
     public static function form(Schema $schema): Schema
     {
@@ -47,8 +50,6 @@ class IndicatorTargetResource extends Resource
     {
         return [
             'index' => ListIndicatorTargets::route('/'),
-            'set' => PlanIndicatorTargets::route('/set'),
-            'edit' => EditIndicatorTarget::route('/{record}/edit'),
         ];
     }
 }

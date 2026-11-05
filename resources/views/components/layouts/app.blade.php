@@ -23,6 +23,9 @@
                 @can('submit')
                     <a href="{{ route('entries.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('entries.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">✎</span>Data Entry</a>
                 @endcan
+                @can('manage-targets')
+                    <a href="{{ route('targets.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('targets.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">◎</span>Targets</a>
+                @endcan
                 @can('review')
                     <a href="{{ route('approvals.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('approvals.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">✓</span>Approvals</a>
                 @endcan
@@ -30,13 +33,11 @@
                 @can('executive-dashboard')
                     <a href="{{ route('executive.dashboard') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('executive.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">◫</span>Executive overview</a>
                 @endcan
-                @can('quality')
-                    <a href="{{ route('data-quality.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('data-quality.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">◇</span>Data Quality</a>
-                @endcan
-                @can('import')
-                    <a href="{{ route('imports.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('imports.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">⇧</span>Imports</a>
-                @endcan
                 @can('configure')
+                    <a href="{{ route('documents.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('documents.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">▣</span>Documents</a>
+                    @if(config('impact.authoritative_project_sync_enabled'))
+                        <a href="{{ route('administration.project-sync.index') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium {{ request()->routeIs('administration.project-sync.*') ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900' }}"><span class="w-5 text-center">↻</span>Project sync</a>
+                    @endif
                     <a href="{{ url('/admin') }}" class="flex items-center gap-3 rounded-lg px-3 py-2.5 font-medium text-slate-600 hover:bg-slate-50 hover:text-slate-900"><span class="w-5 text-center">⚙</span>Administration</a>
                 @endcan
             </nav>
@@ -70,11 +71,11 @@
                         @endif
                     </a>
 
-                    <div x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false" @keydown.escape.window="open = false" class="relative">
-                        <button @click="open = ! open" :aria-expanded="open" aria-haspopup="menu" aria-label="Open account menu" class="grid h-10 w-10 place-items-center overflow-hidden rounded-full ring-2 ring-transparent transition hover:ring-brand-200 focus:outline-none focus:ring-brand-300">
+                    <details class="group relative">
+                        <summary aria-label="Open account menu" class="grid h-10 w-10 cursor-pointer list-none place-items-center overflow-hidden rounded-full ring-2 ring-transparent transition hover:ring-brand-200 focus:outline-none focus:ring-brand-300 [&::-webkit-details-marker]:hidden">
                             <img src="{{ asset('images/mne-mark.svg') }}" alt="MnE" class="h-full w-full">
-                        </button>
-                        <div x-cloak x-show="open" x-transition.origin.top.right @click.outside="open = false" role="menu" class="absolute right-0 top-full z-50 w-64 pt-2">
+                        </summary>
+                        <div role="menu" class="absolute right-0 top-full z-50 w-64 pt-2">
                             <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
                                 <div class="border-b border-slate-100 px-4 py-3">
                                     <p class="truncate text-sm font-semibold text-slate-900">{{ auth()->user()->name }}</p>
@@ -92,7 +93,7 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </details>
                 </div>
             </header>
 

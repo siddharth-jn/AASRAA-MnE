@@ -1,16 +1,20 @@
 <?php
 
+use App\Http\Controllers\ApprovalSpreadsheetController;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\DataQualityController;
+use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\EntryController;
 use App\Http\Controllers\ExecutiveDashboardController;
 use App\Http\Controllers\ImportController;
+use App\Http\Controllers\IndicatorImportController;
 use App\Http\Controllers\KpiController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\PortalController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ProjectSyncController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\TargetController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function (): void {
@@ -35,7 +39,19 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/data-entry/{assignment}', [EntryController::class, 'edit'])->name('entries.edit');
     Route::post('/data-entry/{assignment}', [EntryController::class, 'store'])->name('entries.store');
     Route::post('/data-entry/entries/{entry}/amendment', [EntryController::class, 'requestAmendment'])->name('entries.amendment');
+    Route::get('/targets', [TargetController::class, 'index'])->name('targets.index');
+    Route::get('/targets/template', [TargetController::class, 'templateAll'])->name('targets.template.all');
+    Route::get('/targets/template/{project}', [TargetController::class, 'template'])->name('targets.template');
+    Route::post('/targets/import', [TargetController::class, 'upload'])->name('targets.imports.upload');
+    Route::get('/targets/import/{batch}', [TargetController::class, 'showImport'])->name('targets.imports.show');
+    Route::post('/targets/import/{batch}/confirm', [TargetController::class, 'confirmImport'])->name('targets.imports.confirm');
+    Route::get('/indicator-imports/template', [IndicatorImportController::class, 'downloadTemplate'])->name('indicator-imports.template.select');
+    Route::get('/indicator-imports/template/{project}', [IndicatorImportController::class, 'template'])->name('indicator-imports.template');
+    Route::post('/indicator-imports', [IndicatorImportController::class, 'upload'])->name('indicator-imports.upload');
+    Route::post('/indicator-imports/{batch}/confirm', [IndicatorImportController::class, 'confirm'])->name('indicator-imports.confirm');
     Route::get('/approvals', [EntryController::class, 'approvals'])->name('approvals.index');
+    Route::get('/approvals/excel', [ApprovalSpreadsheetController::class, 'download'])->name('approvals.excel.download');
+    Route::post('/approvals/excel', [ApprovalSpreadsheetController::class, 'upload'])->name('approvals.excel.upload');
     Route::post('/approvals/bulk', [EntryController::class, 'bulkReview'])->name('approvals.bulk');
     Route::post('/approvals/{entry}', [EntryController::class, 'review'])->name('approvals.review');
     Route::get('/executive-dashboard', ExecutiveDashboardController::class)->name('executive.dashboard');
@@ -44,7 +60,13 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
     Route::get('/reports/export', [ReportController::class, 'export'])->name('reports.export');
     Route::get('/reports/excel', [ReportController::class, 'excel'])->name('reports.excel');
-    Route::get('/data-quality', [DataQualityController::class, 'index'])->name('data-quality.index');
+    Route::get('/reports/pdf', [ReportController::class, 'pdf'])->name('reports.pdf');
+    Route::get('/documents', [DocumentController::class, 'index'])->name('documents.index');
+    Route::post('/documents/{group}/folders', [DocumentController::class, 'createFolder'])->name('documents.folders.store');
+    Route::delete('/documents/{group}/folders', [DocumentController::class, 'destroyFolder'])->name('documents.folders.destroy');
+    Route::post('/documents/{group}/files', [DocumentController::class, 'upload'])->name('documents.upload');
+    Route::delete('/documents/{group}/files', [DocumentController::class, 'destroyFiles'])->name('documents.files.destroy');
+    Route::get('/documents/{group}/files/{file}', [DocumentController::class, 'download'])->name('documents.download');
     Route::get('/imports', [ImportController::class, 'index'])->name('imports.index');
     Route::post('/imports', [ImportController::class, 'upload'])->name('imports.upload');
     Route::get('/imports/template/{project}', [ImportController::class, 'template'])->name('imports.template');
@@ -57,5 +79,7 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/profile/password', [PasswordController::class, 'edit'])->name('password.edit');
     Route::patch('/profile/password', [PasswordController::class, 'change'])->name('password.change');
     Route::get('/profile', [ProfileController::class, 'show'])->name('profile.show');
+    Route::get('/administration/project-sync', [ProjectSyncController::class, 'index'])->name('administration.project-sync.index');
+    Route::post('/administration/project-sync', [ProjectSyncController::class, 'store'])->name('administration.project-sync.store');
     Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
 });

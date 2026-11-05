@@ -8,7 +8,8 @@
                 <p class="mt-2 line-clamp-2 text-sm leading-6 text-slate-500">{{ $project->description }}</p>
                 <div class="mt-5 border-t border-slate-100 pt-4 text-xs text-slate-500">
                     <p class="mb-3"><strong class="text-slate-800">{{ $project->centres_count }}</strong> projects</p>
-                    <div class="grid grid-cols-3 gap-2">
+                    <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <span><strong class="block text-base text-slate-800">{{ $project->input_indicators_count }}</strong>Input</span>
                         <span><strong class="block text-base text-slate-800">{{ $project->activity_indicators_count }}</strong>Activity</span>
                         <span><strong class="block text-base text-slate-800">{{ $project->output_indicators_count }}</strong>Output</span>
                         <span><strong class="block text-base text-slate-800">{{ $project->outcome_indicators_count }}</strong>Outcome</span>

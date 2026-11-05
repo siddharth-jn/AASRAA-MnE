@@ -5,6 +5,8 @@ namespace App\Filament\Resources\Users\Tables;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
+use Filament\Tables\Filters\TernaryFilter;
 use Filament\Tables\Table;
 
 class UsersTable
@@ -38,7 +40,9 @@ class UsersTable
                     ->boolean(),
             ])
             ->filters([
-                //
+                SelectFilter::make('role')
+                    ->options(collect(config('impact.roles'))->mapWithKeys(fn (string $role): array => [$role => str($role)->lower()->headline()->toString()])->all()),
+                TernaryFilter::make('active'),
             ])
             ->recordActions([
                 EditAction::make(),

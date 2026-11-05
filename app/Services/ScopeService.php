@@ -35,7 +35,13 @@ class ScopeService
     {
         return IndicatorAssignment::query()
             ->whereHas('indicator.project', fn (Builder $q) => $q->whereIn('projects.id', $this->projects($user)->select('projects.id')))
-            ->whereIn('centre_id', $this->centres($user)->select('centres.id'))
+            ->where(function (Builder $query) use ($user): void {
+                $query->whereIn('centre_id', $this->centres($user)->select('centres.id'))
+                    ->orWhere(function (Builder $programmeQuery): void {
+                        $programmeQuery->whereNull('centre_id')
+                            ->whereHas('indicator', fn (Builder $indicatorQuery): Builder => $indicatorQuery->where('reporting_scope', 'programme'));
+                    });
+            })
             ->when($user->is_demo, fn (Builder $query): Builder => $query->where('indicator_assignments.is_demo', true));
     }
 
@@ -43,7 +49,7 @@ class ScopeService
     {
         $q = IndicatorEntry::query()->whereIn('indicator_assignment_id', $this->assignments($user)->select('indicator_assignments.id'));
         if (in_array($user->role, ['VIEWER', 'CEO', 'CFO'], true)) {
-            $q->where('status', 'FINAL APPROVED')->whereNotNull('approved_revision_id');
+            $q->whereNotNull('approved_revision_id');
         }
 
         return $q;

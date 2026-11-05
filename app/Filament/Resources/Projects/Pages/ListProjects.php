@@ -16,6 +16,6 @@ class ListProjects extends ListRecords
 
     public function getSubheading(): ?string
     {
-        return 'Programme codes and names come from the organisation database. Open a programme to manage its monitoring setup and indicators.';
+        return 'Programme codes and names come from the organisation database. Open a programme to manage its monitoring setup and project assignments. Manage indicator definitions separately under Indicators.';
     }
 }

@@ -102,6 +102,10 @@ class AuthoritativeDataTransitionService
             DB::table('import_rows')->whereIn('import_batch_id', $importBatchIds)->delete();
             DB::table('import_batches')->whereIn('id', $importBatchIds)->delete();
 
+            $indicatorImportBatchIds = DB::table('indicator_import_batches')->whereIn('project_id', $removedProjectIds)->pluck('id');
+            DB::table('indicator_import_rows')->whereIn('indicator_import_batch_id', $indicatorImportBatchIds)->delete();
+            DB::table('indicator_import_batches')->whereIn('id', $indicatorImportBatchIds)->delete();
+
             DB::table('project_centres')
                 ->whereIn('centre_id', $removedCentreIds)
                 ->when($removedProjectIds->isNotEmpty(), fn ($query) => $query->orWhereIn('project_id', $removedProjectIds))

@@ -2,98 +2,111 @@
 
 namespace App\Console\Commands;
 
-use App\Models\AuthoritativeProject;
+use App\Models\SourceSyncRun;
+use App\Services\AuthoritativeProjectSourceService;
 use App\Services\AuthoritativeProjectSyncService;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Throwable;
 
-#[Signature('impact:sync-authoritative-projects {--dry-run : Inspect the changes and roll back all local writes}')]
-#[Description('Mirror active authoritative projects into the local monitoring database')]
+#[Signature('impact:sync-authoritative-projects {--dry-run : Preview source changes without changing local project records}')]
+#[Description('Preview or synchronize the read-only Projects database into local reporting projects')]
 class SyncAuthoritativeProjects extends Command
 {
-    public function handle(AuthoritativeProjectSyncService $syncService): int
-    {
-        $sourceProjects = AuthoritativeProject::query()
-            ->operational()
-            ->leftJoin('donors', 'donors.id', '=', 'projects.donor_id')
-            ->select([
-                'projects.id',
-                'projects.name',
-                'projects.program',
-                'projects.description',
-                'projects.status',
-                'projects.timing_slot',
-                'projects.address',
-                'projects.location',
-                'projects.started_date',
-                'projects.poc_name',
-                'projects.poc_contact',
-                'projects.poc_designation',
-                'projects.donor_id',
-                'donors.name as donor_name',
-                'projects.budget_head',
-            ])
-            ->orderBy('projects.id')
-            ->get();
+    public function handle(
+        AuthoritativeProjectSourceService $source,
+        AuthoritativeProjectSyncService $sync,
+    ): int {
+        $run = null;
 
-        if ($sourceProjects->isEmpty()) {
-            $this->components->error('The authoritative source returned no active projects. No local data was changed.');
+        if (! config('impact.authoritative_project_sync_enabled')) {
+            $this->components->error('Project synchronization is disabled. Set AUTHORITATIVE_PROJECT_SYNC_ENABLED=true to enable it.');
 
             return self::FAILURE;
         }
 
-        $sourceStatuses = AuthoritativeProject::query()
-            ->withoutDemoProgramme()
-            ->select(['projects.id', 'projects.status'])
-            ->get();
-
-        $isDryRun = (bool) $this->option('dry-run');
-
-        if ($isDryRun) {
-            DB::beginTransaction();
-        }
-
         try {
-            $statistics = $syncService->sync($sourceProjects);
-            $statistics['status_updates'] = $syncService->reconcileStatuses($sourceStatuses);
+            $sourceProjects = $source->operationalProjects();
+            $sourceStatuses = $source->projectStatuses();
+            if ($sourceProjects->isEmpty()) {
+                $this->components->error('The Projects database returned no active projects. No local data was changed.');
 
-            if ($isDryRun) {
-                DB::rollBack();
+                return self::FAILURE;
             }
+
+            $preview = $sync->preview($sourceProjects, $sourceStatuses);
+            $this->displayPreview($preview);
+
+            if ($this->option('dry-run')) {
+                $this->components->info('Dry run complete. The source and local project records were not modified.');
+
+                return self::SUCCESS;
+            }
+
+            if ($preview['blocked']) {
+                $this->components->error('Synchronization is blocked by the highlighted preview items. No local project records were changed.');
+
+                return self::FAILURE;
+            }
+
+            $run = SourceSyncRun::create([
+                'source' => 'projects database',
+                'snapshot_hash' => $source->snapshotHash($sourceProjects, $sourceStatuses),
+                'status' => 'running',
+                'summary' => $preview,
+                'started_at' => now(),
+                'is_demo' => false,
+            ]);
+            $statistics = $sync->sync($sourceProjects);
+            $statistics['status_updates'] = $sync->reconcileStatuses($sourceStatuses);
+            $run->update([
+                'status' => 'completed',
+                'summary' => [...$preview, 'applied' => $statistics],
+                'completed_at' => now(),
+            ]);
+
+            $this->components->info('Projects synchronized locally. The source database was not modified.');
+
+            return self::SUCCESS;
         } catch (Throwable $exception) {
-            if ($isDryRun && DB::transactionLevel() > 0) {
-                DB::rollBack();
+            if ($run) {
+                $run->update([
+                    'status' => 'failed',
+                    'error' => str($exception->getMessage())->limit(2000),
+                    'completed_at' => now(),
+                ]);
             }
+            report($exception);
+            $this->components->error('Project synchronization failed. No source data was modified. '.$exception->getMessage());
 
-            throw $exception;
+            return self::FAILURE;
         }
+    }
 
-        $this->table(['Result', 'Count'], [
-            ['Active source projects', $statistics['source']],
-            ['Local projects created', $statistics['created']],
-            ['Local projects updated', $statistics['updated']],
-            ['Matched by existing name', $statistics['matched_by_name']],
-            ['Soft-deleted projects restored', $statistics['restored']],
-            ['Programme links added', $statistics['programme_links_created']],
-            ['Existing project statuses changed', $statistics['status_updates']],
+    /** @param array<string, mixed> $preview */
+    private function displayPreview(array $preview): void
+    {
+        $this->table(['Preview', 'Count'], [
+            ['Active source projects', $preview['source']],
+            ['New projects', $preview['created']],
+            ['Changed projects', $preview['updated']],
+            ['Unchanged projects', $preview['unchanged']],
+            ['Status changes', $preview['status_updates']],
+            ['Programme links to add', $preview['programme_links_created']],
         ]);
 
-        if ($statistics['unmapped_source_programmes'] !== []) {
-            $this->components->warn('No programme mapping: '.implode(', ', $statistics['unmapped_source_programmes']));
+        foreach ($preview['changes'] as $change) {
+            $this->line("[{$change['type']}] ID {$change['source_id']} {$change['project']}");
+            foreach ($change['details'] as $detail) {
+                $this->line("  {$detail['field']}: {$detail['before']} -> {$detail['after']}");
+            }
         }
 
-        if ($statistics['missing_local_programmes'] !== []) {
-            $this->components->warn('Mapped local programmes not found: '.implode(', ', $statistics['missing_local_programmes']));
+        foreach (['unmapped_source_programmes', 'missing_local_programmes', 'potential_duplicates', 'missing_from_source', 'donor_conflicts'] as $warningKey) {
+            foreach ($preview[$warningKey] as $warning) {
+                $this->components->warn(str($warningKey)->headline().": {$warning}");
+            }
         }
-
-        $message = $isDryRun
-            ? 'Dry run complete. All local changes were rolled back.'
-            : 'Authoritative projects synchronized. The source database was not modified.';
-        $this->components->info($message);
-
-        return self::SUCCESS;
     }
 }

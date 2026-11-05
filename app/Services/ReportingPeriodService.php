@@ -9,11 +9,11 @@ class ReportingPeriodService
 {
     public function __construct(private readonly IndicatorReportingPeriodService $indicatorPeriods) {}
 
-    /** @return array{type: string, start: CarbonImmutable, end: CarbonImmutable, data_start: CarbonImmutable, data_end: CarbonImmutable, warning: ?string} */
+    /** @return array{type: string, start: CarbonImmutable, end: CarbonImmutable, data_start: CarbonImmutable, data_end: CarbonImmutable, warning: ?string, provisional: bool} */
     public function fromRequest(Request $request): array
     {
         $type = (string) $request->input('period_type', 'monthly');
-        $anchor = CarbonImmutable::parse($request->input('anchor', '2026-09-01'));
+        $anchor = CarbonImmutable::parse($request->input('anchor', CarbonImmutable::now()->startOfMonth()->toDateString()));
         $warning = null;
 
         [$start, $end] = match ($type) {
@@ -28,9 +28,19 @@ class ReportingPeriodService
 
         abort_if($end->lt($start), 422, 'End date must be after start date.');
 
-        $dataStart = $start->day === 1 ? $start->startOfMonth() : $start->addMonth()->startOfMonth();
-        $dataEnd = $end->isSameDay($end->endOfMonth()) ? $end->endOfMonth() : $end->subMonth()->endOfMonth();
-        if ($type === 'custom' && (! $dataStart->isSameDay($start) || ! $dataEnd->isSameDay($end))) {
+        $includesPartialStartMonth = $start->day !== 1;
+        $includesPartialEndMonth = ! $end->isSameDay($end->endOfMonth());
+        $dataStart = $includesPartialStartMonth ? $start->addMonth()->startOfMonth() : $start->startOfMonth();
+        $dataEnd = $includesPartialEndMonth ? $end->subMonth()->endOfMonth() : $end->endOfMonth();
+        $currentMonthEnd = CarbonImmutable::now()->endOfMonth();
+        $provisional = $end->isAfter(CarbonImmutable::now());
+        if ($dataEnd->gt($currentMonthEnd)) {
+            $dataEnd = $currentMonthEnd;
+            $warning = 'This reporting period is still open. Targets and approved achievements are calculated only through '.$currentMonthEnd->format('F Y').'.';
+        } elseif ($provisional) {
+            $warning = 'This reporting period is still open. Performance is provisional until the period closes.';
+        }
+        if ($type === 'custom' && ($includesPartialStartMonth || $includesPartialEndMonth)) {
             $warning = 'Monthly records are not prorated. Results include only complete months fully contained in the custom date range.';
         }
 
@@ -45,6 +55,7 @@ class ReportingPeriodService
             'data_start' => $dataStart,
             'data_end' => $dataEnd,
             'warning' => $warning,
+            'provisional' => $provisional,
         ];
     }
 

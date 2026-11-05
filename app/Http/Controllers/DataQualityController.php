@@ -18,7 +18,7 @@ class DataQualityController extends Controller
     public function index(Request $request, ScopeService $scope, CompletenessService $completeness): View
     {
         Gate::authorize('quality');
-        $period = CarbonImmutable::parse($request->input('period', '2026-09'))->startOfMonth();
+        $period = CarbonImmutable::parse($request->input('period', CarbonImmutable::now()->format('Y-m')))->startOfMonth();
         $summary = $completeness->summary($request->user(), $period, $period->endOfMonth());
         $entries = $scope->entries($request->user())
             ->whereDate('period', $period)

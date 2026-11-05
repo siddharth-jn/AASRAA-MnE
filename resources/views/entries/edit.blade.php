@@ -1,7 +1,14 @@
 <x-layouts.app heading="Report an achievement">
     @php($definition = $assignment->indicator)
     @php($revision = $entry?->currentRevision)
+    @php($isAmendment = $revision?->supersedes_revision_id !== null)
     @php($locked = $entry && (in_array($entry->status, \App\Support\WorkflowStatus::pending(), true) || $entry->status === \App\Support\WorkflowStatus::FinalApproved || ($revision?->user_id !== auth()->id() && auth()->user()->role !== 'ADMIN')))
+    @php($targetDisplay = match($target->target_type) {
+        'range' => number_format($target->minimum_value, $definition->precision).' - '.number_format($target->maximum_value, $definition->precision),
+        'status' => $target->status_value,
+        'ratio' => rtrim(rtrim(number_format($target->target_numerator, 2), '0'), '.').'/'.rtrim(rtrim(number_format($target->target_denominator, 2), '0'), '.'),
+        default => number_format($target->value, $definition->precision),
+    })
     <div class="mx-auto max-w-3xl">
         <div class="card mb-5 p-6">
             <div class="grid gap-5 sm:grid-cols-2">
@@ -11,7 +18,7 @@
                 </div>
                 <div>
                     <p class="text-xs font-semibold uppercase text-slate-400">Project</p>
-                    <p class="mt-1 font-semibold text-ink">{{ $assignment->centre->name }}</p>
+                    <p class="mt-1 font-semibold text-ink">{{ $assignment->centre?->name ?? 'Programme level' }}</p>
                 </div>
                 <div>
                     <p class="text-xs font-semibold uppercase text-slate-400">Indicator</p>
@@ -21,47 +28,45 @@
                 <div>
                     <p class="text-xs font-semibold uppercase text-slate-400">Reporting period</p>
                     <p class="mt-1 font-semibold text-ink">{{ $periodLabel }}</p>
-                    @if($definition->frequency !== 'monthly')
-                        <p class="mt-1 text-xs text-slate-500">This single entry applies to the entire {{ strtolower(config('impact.frequencies.'.$definition->frequency)) }} period.</p>
-                    @endif
-                    @if($target)
-                        <p class="mt-1 text-sm text-slate-500">
-                            Target:
-                            @if($target->target_type === 'range')
-                                {{ number_format($target->minimum_value, 2) }}–{{ number_format($target->maximum_value, 2) }}
-                            @elseif($target->target_type === 'status')
-                                {{ $target->status_value }}
-                            @else
-                                {{ number_format($target->value, $definition->precision) }} {{ $definition->unit }}
-                            @endif
-                        </p>
-                    @elseif($definition->target_tracking)
-                        <p class="mt-1 text-sm text-slate-500">No target set for this period. You can still report the result.</p>
-                    @endif
                 </div>
+            </div>
+        </div>
+
+        <div class="mb-5 rounded-xl border-2 border-brand-200 bg-brand-50 p-5 shadow-sm">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <p class="text-xs font-bold uppercase tracking-wide text-brand-700">Target: {{ $periodLabel }}</p>
+                    <p class="mt-1 text-3xl font-bold text-ink">{{ $targetDisplay }} <span class="text-base font-semibold text-slate-500">{{ $target->target_type === 'status' ? '' : $definition->unit }}</span></p>
+                </div>
+                <p class="max-w-sm text-sm leading-6 text-slate-600">Enter the achievement for this exact monthly target. The variance and any required explanation are calculated when you save or submit.</p>
             </div>
         </div>
 
         <form method="POST" enctype="multipart/form-data" action="{{ route('entries.store', $assignment) }}" class="card p-6">
             @csrf
             <input type="hidden" name="period" value="{{ $period }}">
+            <input type="hidden" name="project" value="{{ request()->integer('project') ?: '' }}">
+            <input type="hidden" name="centre" value="{{ request()->integer('centre') ?: '' }}">
+            <input type="hidden" name="donor" value="{{ request()->string('donor')->trim()->value() }}">
+            <input type="hidden" name="search" value="{{ request()->string('search')->trim()->value() }}">
+            <input type="hidden" name="entry_status" value="{{ request()->string('entry_status')->value() }}">
             @if(request()->boolean('lock_project'))<input type="hidden" name="lock_project" value="1">@endif
 
             @if($locked)
                 <div class="mb-5 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">This entry is read-only for your account. Submitted and final-approved values cannot be edited directly, and only the original submitter may correct a returned entry.</div>
             @endif
 
+            @if($entry?->target_change_reason)
+                <div class="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"><strong>Target changed:</strong> {{ $entry->target_change_reason }}</div>
+            @endif
+
+            @if($isAmendment)
+                <div class="mb-5 rounded-lg border border-purple-200 bg-purple-50 px-4 py-3 text-sm text-purple-900"><strong>Amendment:</strong> {{ $revision->amendment_reason }}. The previous approved value remains official until this revision completes both approval stages.</div>
+            @endif
+
             <fieldset @disabled($locked)>
 
-            <div class="mb-6">
-                <label for="value_state">Reporting state</label>
-                <select id="value_state" name="value_state" class="mt-1 w-full">
-                    <option value="reported" @selected(old('value_state', $revision?->value_state) === 'reported')>Reported value</option>
-                    <option value="not_applicable" @selected(old('value_state', $revision?->value_state) === 'not_applicable')>Not applicable</option>
-                </select>
-            </div>
-
-            @if(in_array($definition->data_type, ['ratio', 'calculated'], true))
+            @if(in_array($definition->data_type, ['ratio', 'calculated'], true) || ($definition->data_type === 'percentage' && $definition->calculation_method === 'ratio_percentage'))
                 <div class="grid gap-4 sm:grid-cols-2">
                     <div>
                         <label for="numerator">{{ $definition->numerator_label ?: 'Numerator' }}</label>
@@ -168,9 +173,9 @@
             @endif
 
             <div class="mt-7 flex flex-wrap justify-end gap-3">
-                <a href="{{ route('entries.index', ['period' => substr($period, 0, 7), 'period_type' => $definition->frequency, 'project' => $definition->project_id, 'centre' => $assignment->centre_id, 'lock_project' => request()->boolean('lock_project') ? 1 : null]) }}" class="btn-secondary">Cancel</a>
+                <a href="{{ route('entries.index', ['period' => substr($period, 0, 7), 'period_type' => 'monthly', 'project' => request()->integer('project') ?: $definition->project_id, 'centre' => request()->integer('centre') ?: $assignment->centre_id, 'donor' => request()->string('donor')->trim()->value() ?: null, 'search' => request()->string('search')->trim()->value() ?: null, 'entry_status' => request()->string('entry_status')->value() ?: null, 'lock_project' => request()->boolean('lock_project') ? 1 : null]) }}" class="btn-secondary">Cancel</a>
                 <button name="action" value="draft" class="btn-secondary">Save draft</button>
-                <button name="action" value="submit" class="btn-primary">{{ $definition->approval_required ? 'Submit for approval' : 'Submit result' }}</button>
+                <button name="action" value="submit" class="btn-primary">{{ $definition->approval_required || $isAmendment ? 'Submit for approval' : 'Submit result' }}</button>
             </div>
             </fieldset>
         </form>

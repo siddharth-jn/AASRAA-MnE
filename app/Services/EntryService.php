@@ -29,7 +29,7 @@ class EntryService
         $definition = $assignment->loadMissing('indicator')->indicator;
         $isDemo = (bool) $assignment->is_demo;
         $requestedPeriod = CarbonImmutable::parse($period)->startOfMonth();
-        [$normalizedPeriod, $periodEnd] = $this->periods->boundaries($requestedPeriod, $definition->frequency);
+        [$normalizedPeriod, $periodEnd] = $this->periods->boundaries($requestedPeriod, 'monthly');
         if (! $this->periods->isAvailable($definition, $requestedPeriod)) {
             throw ValidationException::withMessages([
                 'period' => 'Reporting for this indicator starts in '.$definition->effective_date->format('F Y').'.',
@@ -37,10 +37,15 @@ class EntryService
         }
 
         $target = $this->targets->findForPeriod($assignment->id, $normalizedPeriod);
+        if (! $target) {
+            throw ValidationException::withMessages([
+                'period' => 'No target is set for this month, so no achievement can be entered.',
+            ]);
+        }
         $variance = $this->variances->evaluate($definition, $target, $data);
         if ($submit && $variance['flagged'] && blank($data['variance_explanation'] ?? null)) {
             throw ValidationException::withMessages([
-                'variance_explanation' => 'Explain this variance before submitting because it is at least 10% from target or outside the expected target.',
+                'variance_explanation' => 'Explain this variance before submitting because it is more than 10% from target or outside the expected target.',
             ]);
         }
 
@@ -81,10 +86,13 @@ class EntryService
                 if ($submit && $definition->evidence_required && ($existingEvidenceCount + count($files)) < $minimumEvidenceCount) {
                     throw ValidationException::withMessages(['evidence' => "At least {$minimumEvidenceCount} supporting file(s) are required before submission."]);
                 }
+                $supersedesRevisionId = $entry->currentRevision?->supersedes_revision_id;
+                $isAmendment = $supersedesRevisionId !== null;
                 $status = $submit
-                    ? ($definition->approval_required ? WorkflowStatus::PendingSeniorProgrammeLead : WorkflowStatus::FinalApproved)
+                    ? ($definition->approval_required || $isAmendment ? WorkflowStatus::PendingSeniorProgrammeLead : WorkflowStatus::FinalApproved)
                     : WorkflowStatus::Draft;
                 $revision = $entry->revisions()->create([
+                    'supersedes_revision_id' => $supersedesRevisionId,
                     'indicator_definition_version_id' => $definition->versions()->latest('version')->value('id'), 'user_id' => $user->id,
                     'version' => ($entry->revisions()->max('version') ?? 0) + 1, 'status' => $status,
                     'value_state' => $data['value_state'] ?? 'reported', 'numeric_value' => $data['numeric_value'] ?? null,
@@ -92,6 +100,7 @@ class EntryService
                     'text_value' => $data['text_value'] ?? null, 'date_value' => $data['date_value'] ?? null,
                     'boolean_value' => $data['boolean_value'] ?? null, 'json_value' => $data['json_value'] ?? null,
                     'notes' => $data['notes'] ?? null,
+                    'amendment_reason' => $entry->currentRevision?->amendment_reason,
                     'variance_percentage' => $variance['percentage'],
                     'variance_flagged' => $variance['flagged'],
                     'variance_explanation' => $data['variance_explanation'] ?? null,
@@ -115,6 +124,9 @@ class EntryService
                     'current_revision_id' => $revision->id,
                     'approved_revision_id' => $status === WorkflowStatus::FinalApproved ? $revision->id : $entry->approved_revision_id,
                     'status' => $revision->status,
+                    'target_changed_at' => null,
+                    'target_change_from_status' => null,
+                    'target_change_reason' => null,
                 ]);
 
                 return $entry->fresh(['assignment.indicator', 'currentRevision.evidence']);
@@ -126,9 +138,10 @@ class EntryService
         }
 
         if ($submit && $entry->status === WorkflowStatus::PendingSeniorProgrammeLead) {
+            $scopeName = $entry->assignment->centre?->name ?? $entry->assignment->indicator->project->name.' (programme level)';
             $this->reviewersFor($entry, WorkflowStatus::PendingSeniorProgrammeLead)->each(fn (User $reviewer) => $reviewer->notify(new WorkflowNotification(
                 'Submission requires approval',
-                "{$entry->assignment->indicator->name} was submitted for {$entry->assignment->centre->name}.",
+                "{$entry->assignment->indicator->name} was submitted for {$scopeName}.",
                 route('approvals.index'),
                 'approval_required',
                 showcase: (bool) $entry->is_demo,
@@ -146,12 +159,15 @@ class EntryService
             if (! in_array($entry->status, WorkflowStatus::pending(), true) || ! $revision) {
                 throw ValidationException::withMessages(['entry' => 'This submission is no longer pending.']);
             }
+            if (! $this->targets->findForPeriod($entry->indicator_assignment_id, $entry->period)) {
+                throw ValidationException::withMessages(['entry' => 'This submission cannot be approved because no active target is set for its month.']);
+            }
             $stage = $entry->status === WorkflowStatus::PendingSeniorProgrammeLead ? 'SENIOR PROGRAM LEAD' : 'M&E HEAD';
             $allowedRoles = $stage === 'SENIOR PROGRAM LEAD' ? ['ADMIN', 'SENIOR PROGRAM LEAD'] : ['ADMIN', 'M&E HEAD'];
             if (! in_array($reviewer->role, $allowedRoles, true)) {
                 throw ValidationException::withMessages(['entry' => 'This submission is pending review at a different stage.']);
             }
-            if ($revision->user_id === $reviewer->id) {
+            if ($revision->user_id === $reviewer->id && $reviewer->role !== 'ADMIN') {
                 throw ValidationException::withMessages(['entry' => 'You cannot approve your own submission.']);
             }
             if (in_array($action, ['RETURNED', 'REJECTED'], true) && blank($comment)) {
@@ -171,10 +187,11 @@ class EntryService
         });
 
         $entry->loadMissing(['assignment.indicator', 'assignment.centre', 'currentRevision.user']);
+        $scopeName = $entry->assignment->centre?->name ?? $entry->assignment->indicator->project->name.' (programme level)';
         $submitter = $entry->currentRevision->user;
         $submitter->notify(new WorkflowNotification(
             "Submission {$entry->status}",
-            trim("{$entry->assignment->indicator->name} for {$entry->assignment->centre->name} is now {$entry->status}. ".($comment ?: '')),
+            trim("{$entry->assignment->indicator->name} for {$scopeName} is now {$entry->status}. ".($comment ?: '')),
             route('entries.edit', [
                 'assignment' => $entry->indicator_assignment_id,
                 'period' => $entry->period->format('Y-m'),
@@ -187,7 +204,7 @@ class EntryService
         if ($entry->status === WorkflowStatus::PendingMneHead) {
             $this->reviewersFor($entry, WorkflowStatus::PendingMneHead)->each(fn (User $nextReviewer) => $nextReviewer->notify(new WorkflowNotification(
                 'Submission requires final M&E approval',
-                "{$entry->assignment->indicator->name} passed Senior Programme Lead review for {$entry->assignment->centre->name}.",
+                "{$entry->assignment->indicator->name} passed Senior Programme Lead review for {$scopeName}.",
                 route('approvals.index'),
                 'mne_approval_required',
                 showcase: (bool) $entry->is_demo,
@@ -197,7 +214,7 @@ class EntryService
         if ($entry->status === WorkflowStatus::FinalApproved) {
             User::query()->where('active', true)->whereIn('role', ['CEO', 'CFO'])->each(fn (User $executive) => $executive->notify(new WorkflowNotification(
                 'Result final approved',
-                "{$entry->assignment->indicator->name} was final approved for {$entry->assignment->centre->name}.",
+                "{$entry->assignment->indicator->name} was final approved for {$scopeName}.",
                 route('executive.dashboard'),
                 'final_approved',
                 showcase: (bool) $entry->is_demo,
@@ -217,6 +234,7 @@ class EntryService
 
             $approved = $entry->approvedRevision;
             $revision = $entry->revisions()->create([
+                'supersedes_revision_id' => $approved->id,
                 'indicator_definition_version_id' => $approved->indicator_definition_version_id,
                 'user_id' => $user->id,
                 'version' => ($entry->revisions()->max('version') ?? 0) + 1,
@@ -230,7 +248,8 @@ class EntryService
                 'date_value' => $approved->date_value,
                 'boolean_value' => $approved->boolean_value,
                 'json_value' => $approved->json_value,
-                'notes' => 'Amendment requested: '.$reason,
+                'notes' => $approved->notes,
+                'amendment_reason' => $reason,
                 'variance_percentage' => $approved->variance_percentage,
                 'variance_flagged' => $approved->variance_flagged,
                 'variance_explanation' => $approved->variance_explanation,

@@ -8,4 +8,9 @@ use Filament\Resources\Pages\CreateRecord;
 class CreateCentre extends CreateRecord
 {
     protected static string $resource = CentreResource::class;
+
+    protected function afterCreate(): void
+    {
+        $this->record->ensureLeadAccess();
+    }
 }
